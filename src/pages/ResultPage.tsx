@@ -112,9 +112,11 @@ export function ResultPage() {
 
       {busy && <GenerationProgress variant="banner" />}
 
-      <section className="result-compare-section" aria-busy={busy}>
+      <section className="result-stage" aria-busy={busy}>
         <div className="result-section-top"><div><span className="eyebrow">01 · {t('result.reference')}</span><h2>{t('result.comparisonTitle')}</h2></div><span className="result-project-id">SC / {state.id.slice(0, 8).toUpperCase()}</span></div>
-        <BeforeAfterComparison beforeImage={state.photo?.previewUrl} afterImage={generated ? concept.imageUrl : undefined} />
+        <div className="result-stage-frame">
+          <BeforeAfterComparison beforeImage={state.photo?.previewUrl} afterImage={generated ? concept.imageUrl : undefined} />
+        </div>
         {!generated && !busy && (
           <div className="result-unavailable-banner" role="status" aria-live="polite">
             <span className="status-offline-dot" />
@@ -127,18 +129,16 @@ export function ResultPage() {
         )}
       </section>
 
-      <div className="result-action-row">
-        <div className="result-style-picker">
-          <label htmlFor="result-style-select">{t('result.tryStyle')}</label>
-          <select id="result-style-select" value={config.style} onChange={(event) => updateStyle(event.target.value as SignStyle)} disabled={busy}>
-            {SIGN_STYLES.map((style) => <option key={style} value={style}>{t(`style.${style}`)}</option>)}
-          </select>
-        </div>
-        <div className="result-actions">
-          <Link className="button button-outline" to="/studio?step=4"><Sparkles size={16} />{t('result.tryStyle')}</Link>
-          <button className="button button-dark" onClick={() => void regenerate()} disabled={busy || !state.photo?.file} type="button" aria-busy={busy}>
+      <div className="result-action-bar">
+        <button className="button button-primary button-large result-quote-button" type="button" onClick={openQuote} disabled={busy}>
+          {t('result.wantThis')}<ArrowRight size={16} />
+        </button>
+        <div className="result-bar-actions">
+          <button className="button button-outline" onClick={() => void regenerate()} disabled={busy || !state.photo?.file} type="button" aria-busy={busy}>
             {busy ? <span className="spin-dot" /> : <RefreshCw size={16} />}{busy ? t('ai.working') : t('result.tryAgain')}
           </button>
+          <Link className="button button-ghost" to="/studio?step=4"><Sparkles size={16} />{t('result.tryStyle')}</Link>
+          <WhatsAppContactButton />
         </div>
       </div>
 
@@ -155,13 +155,17 @@ export function ResultPage() {
           <div className="result-brief-line"><span>{t('studio.dimensions')}</span><strong>{config.widthCm || '—'} × {config.heightCm || '—'} {t('studio.centimeters')}</strong></div>
           <div className="result-brief-line"><span>{t('result.reference')}</span><strong>{photoReferenceLabel}</strong></div>
           {config.notes && <p className="result-notes">{config.notes}</p>}
+          <div className="result-style-picker">
+            <label htmlFor="result-style-select">{t('result.tryStyle')}</label>
+            <select id="result-style-select" value={config.style} onChange={(event) => updateStyle(event.target.value as SignStyle)} disabled={busy}>
+              {SIGN_STYLES.map((style) => <option key={style} value={style}>{t(`style.${style}`)}</option>)}
+            </select>
+          </div>
 
           <div className="result-next-step">
             <span className="eyebrow">{t('result.nextStepTitle')}</span>
             <p>{t('result.nextStepBody')}</p>
           </div>
-          <button className="button button-dark result-quote-button" type="button" onClick={openQuote} disabled={busy}>{t('result.quoteCta')}<ArrowRight size={16} /></button>
-          <div className="result-whatsapp-row"><WhatsAppContactButton /></div>
           <p className="result-delivery-note">{photoPrivacyNote}</p>
           <time className="result-timestamp">{new Date(concept?.createdAt ?? Date.now()).toLocaleString(localeTag)}</time>
         </aside>

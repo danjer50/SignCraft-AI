@@ -1,9 +1,13 @@
-import { ArrowDown, ArrowRight, ArrowUpRight, BadgeCheck, Check, CircleDot, DraftingCompass, Frame, ShieldCheck, Sparkles } from 'lucide-react';
+import { ArrowDown, ArrowRight, ArrowUpRight, BadgeCheck, Check, CircleDot, Frame, ShieldCheck, Sparkles } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Seo } from '../components/Seo';
+import { TransformationSlider } from '../components/TransformationSlider';
 import { useLanguage } from '../context/LanguageContext';
 import { useQuoteDialog } from '../components/QuoteDialogContext';
 import { WhatsAppContactButton } from '../components/WhatsAppContactButton';
+
+/** One honest illustrative combination, matching the spec's "Alucobond + Acrylic + LED". */
+const SHOWCASE_COMBO = ['aluminiumComposite', 'acrylic', 'ledModules'] as const;
 
 export function HomePage() {
   const { t } = useLanguage();
@@ -16,26 +20,25 @@ export function HomePage() {
         <div className="page-container hero-grid">
           <div className="hero-copy">
             <div className="eyebrow hero-eyebrow"><span className="eyebrow-line" />{t('home.eyebrow')}</div>
-            <h1>{t('home.title')}</h1>
-            <p className="hero-lead">{t('home.lead')}</p>
+            <h1>{t('home.heroTitle')}</h1>
+            <p className="hero-lead">{t('home.heroLead')}</p>
             <div className="hero-actions">
-              <Link className="button button-dark button-large" to="/studio">{t('home.primaryCta')} <ArrowUpRight size={17} /></Link>
-              <a className="button button-quiet button-large" href="#method">{t('home.secondaryCta')} <ArrowDown size={16} /></a>
+              <Link className="button button-primary button-large" to="/studio">{t('home.heroCta')} <ArrowUpRight size={18} /></Link>
+              <a className="button button-ghost button-large" href="#method">{t('home.heroSecondary')} <ArrowDown size={16} /></a>
             </div>
-            <div className="hero-assurance"><ShieldCheck size={17} /><span>{t('home.heroNote')}</span></div>
+            <p className="hero-proof"><ShieldCheck size={15} />{t('home.heroProof')}</p>
           </div>
           <div className="hero-visual-wrap">
-            <div className="hero-photo-shell">
-              <img src="/images/storefront-example.jpg" alt={t('home.photoCaption')} className="hero-photo" />
-              <div className="photo-index">01 <span>/ 01</span></div>
-              <div className="hero-photo-label"><span className="photo-label-mark"><Frame size={16} /></span><span>{t('home.photoTag')}</span></div>
-            </div>
-            <div className="hero-note-card">
-              <div className="note-card-top"><span className="mini-green-dot" />{t('home.metricThree')}</div>
-              <div className="note-card-title">{t('home.photoCaption')}</div>
-              <div className="note-card-footer"><span>SC—01</span><span>PHOTO RÉFÉRENCE</span></div>
-            </div>
-            <div className="hero-stamp" aria-hidden="true"><DraftingCompass size={18} /><span>ATELIER<br />SUR MESURE</span></div>
+            <figure className="hero-transform">
+              <TransformationSlider
+                variant="hero"
+                beforeImage="/images/hero-facade-plain.jpg"
+                afterImage="/images/hero-sign-illuminated.jpg"
+                beforeLabel={t('home.transformBefore')}
+                afterLabel={t('home.transformAfter')}
+              />
+              <figcaption>{t('home.transformCaption')}</figcaption>
+            </figure>
           </div>
         </div>
         <div className="page-container hero-metrics">
@@ -71,27 +74,31 @@ export function HomePage() {
         </div>
       </section>
 
-      <section className="material-section section-pad">
-        <div className="page-container material-grid">
-          <div className="material-visual">
-            <div className="material-photo"><img src="/images/storefront-example.jpg" alt={t('home.photoCaption')} /></div>
-            <div className="material-swatch-card">
-              <span className="swatch-heading">PALETTE · 04</span>
-              <div className="material-swatches"><i /><i /><i /><i /></div>
-              <span className="swatch-caption">MATIÈRES & FINITIONS</span>
+      <section className="showroom-section section-pad">
+        <div className="page-container showroom-grid">
+          <figure className="showroom-visual">
+            <img src="/images/materials-macro.jpg" alt={t('home.imageAltMaterials')} loading="lazy" />
+            <figcaption><span className="showroom-visual-tag">SIGNCRAFT · ATELIER</span></figcaption>
+          </figure>
+          <div className="showroom-copy">
+            <span className="eyebrow"><span className="eyebrow-line" />{t('home.showroomEyebrow')}</span>
+            <h2>{t('home.showroomTitle')}</h2>
+            <p>{t('home.showroomBody')}</p>
+            <div className="showroom-combo" aria-label={t('home.showroomCta')}>
+              {SHOWCASE_COMBO.map((material, index) => (
+                <span className="showroom-combo-chip" key={material}>
+                  {index > 0 && <span className="showroom-combo-plus" aria-hidden="true">+</span>}
+                  <i className={`showroom-swatch showroom-swatch--${material}`} aria-hidden="true" />
+                  {t(`material.${material}`)}
+                </span>
+              ))}
             </div>
-            <span className="material-vertical-note">SIGNALÉTIQUE · TUNIS</span>
-          </div>
-          <div className="material-copy">
-            <span className="eyebrow"><span className="eyebrow-line" />{t('home.materialEyebrow')}</span>
-            <h2>{t('home.materialTitle')}</h2>
-            <p>{t('home.materialBody')}</p>
             <div className="material-checks">
               <span><Check size={15} /> {t('sign.threeD')}</span>
               <span><Check size={15} /> {t('sign.alucobond')}</span>
               <span><Check size={15} /> {t('sign.illuminated')}</span>
             </div>
-            <Link className="text-link" to="/studio">{t('home.materialCta')} <ArrowRight size={16} /></Link>
+            <Link className="button button-outline" to="/studio?step=5">{t('home.showroomCta')} <ArrowRight size={16} /></Link>
           </div>
         </div>
       </section>
@@ -111,8 +118,12 @@ export function HomePage() {
 
       <section className="closing-cta section-pad">
         <div className="page-container closing-cta-inner">
-          <div><span className="eyebrow">SIGNCRAFT AI · TUNIS</span><h2>{t('home.primaryCta')}</h2></div>
-          <div className="closing-actions"><Link className="button button-light button-large" to="/studio">{t('home.primaryCta')} <ArrowUpRight size={17} /></Link><WhatsAppContactButton /><button className="button button-quiet-on-dark" onClick={openQuote} type="button">{t('quote.open')}</button></div>
+          <div><span className="eyebrow">SIGNCRAFT AI · TUNIS</span><h2>{t('home.heroCta')}</h2></div>
+          <div className="closing-actions">
+            <Link className="button button-primary button-large" to="/studio">{t('home.heroCta')} <ArrowUpRight size={17} /></Link>
+            <WhatsAppContactButton />
+            <button className="button button-ghost button-large" onClick={openQuote} type="button">{t('quote.open')}</button>
+          </div>
         </div>
       </section>
     </>

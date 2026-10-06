@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, Box, Check, CircleHelp, History, Lightbulb, PanelsTopLeft, PenTool, Sparkles, WandSparkles } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, CircleHelp, History, Lightbulb, PanelsTopLeft, Sparkles, WandSparkles } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { BusinessCategory, LightingType, SignStyle, SignType, StringConfigurationKey } from '../domain/sign';
 import { BUSINESS_CATEGORIES, LIGHTING_TYPES, SIGN_STYLES, SIGN_TYPES } from '../domain/sign';
@@ -21,6 +21,8 @@ import { useProject } from '../context/ProjectContext';
 import { Seo } from '../components/Seo';
 import { PhotoUploadField } from '../components/PhotoUploadField';
 import { MaterialPicker } from '../components/MaterialPicker';
+import { SignTypeArt } from '../components/SignTypeArt';
+import { StyleArt } from '../components/StyleArt';
 import { OptionalDetails } from '../components/OptionalDetails';
 import { GenerationProgress } from '../components/GenerationProgress';
 import { SafeImage } from '../components/SafeImage';
@@ -28,17 +30,7 @@ import { generateStorefrontConcept } from '../services/ai';
 import { clientConfig } from '../services/config';
 import { photoPrivacyMessageKey } from '../services/ai/presentation';
 
-const swatches = ['#24463f', '#222726', '#d7a46a', '#eee7d8', '#a45b45', '#445a7a', '#829b91', '#f3bb42'];
-const signIcons = [Box, PanelsTopLeft, Lightbulb, PanelsTopLeft, Box, Box, PenTool, Lightbulb, Lightbulb, Sparkles];
-
-function OptionCard({ selected, icon: Icon, title, onClick }: { selected: boolean; icon: typeof Box; title: string; onClick: () => void }) {
-  return (
-    <button type="button" className={`sign-type-card${selected ? ' is-selected' : ''}`} onClick={onClick} aria-pressed={selected}>
-      <span className="sign-type-icon"><Icon size={18} strokeWidth={1.7} /></span>
-      <span>{title}</span>{selected && <Check className="selected-check" size={15} />}
-    </button>
-  );
-}
+const swatches = ['#f2b878', '#e8eef1', '#c98f63', '#4d8f80', '#a45b45', '#445a7a', '#829b91', '#f3bb42'];
 
 function StepHeading({ step, title, body }: { step: number; title: string; body?: string }) {
   return (
@@ -91,7 +83,7 @@ function StudioSummary() {
 
 export function StudioPage() {
   const { t } = useLanguage();
-  const { state, updateConfiguration, setConcept, setStep: persistStep, resetProject } = useProject();
+  const { state, updateConfiguration, setConcept, setStep: persistStep, resetProject, toggleMaterial } = useProject();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [busy, setBusy] = useState(false);
@@ -246,10 +238,19 @@ export function StudioPage() {
                 <div className="studio-step-content">
                   <StepHeading step={3} title={t(STEP_TITLE_KEYS.signType)} body={t(STEP_BODY_KEYS.signType)} />
                   <fieldset className="choice-fieldset"><legend>{t('studio.signType')}</legend><div className="sign-type-grid">
-                    {SIGN_TYPES.map((type, index) => {
-                      const Icon = signIcons[index] ?? Box;
-                      return <OptionCard key={type} selected={config.signType === type} icon={Icon} title={t(`sign.${type}`)} onClick={() => setField('signType', type as SignType)} />;
-                    })}
+                    {SIGN_TYPES.map((type) => (
+                      <button
+                        key={type}
+                        type="button"
+                        className={`sign-type-card${config.signType === type ? ' is-selected' : ''}`}
+                        onClick={() => setField('signType', type as SignType)}
+                        aria-pressed={config.signType === type}
+                      >
+                        <SignTypeArt type={type} />
+                        <span className="sign-type-label">{t(`sign.${type}`)}</span>
+                        {config.signType === type && <Check className="selected-check" size={15} />}
+                      </button>
+                    ))}
                   </div></fieldset>
                   <OptionalDetails label={t('studio.moreOptions')}>
                     <fieldset className="choice-fieldset"><legend>{t('studio.lighting')}</legend><div className="lighting-options">
@@ -266,10 +267,12 @@ export function StudioPage() {
               {stepId === 'style' && (
                 <div className="studio-step-content">
                   <StepHeading step={4} title={t(STEP_TITLE_KEYS.style)} body={t(STEP_BODY_KEYS.style)} />
-                  <fieldset className="choice-fieldset"><legend>{t('studio.style')}</legend><div className="style-chip-grid">
+                  <fieldset className="choice-fieldset style-fieldset"><legend>{t('studio.style')}</legend><div className="style-card-grid">
                     {SIGN_STYLES.map((style) => (
-                      <button type="button" key={style} className={`style-chip${config.style === style ? ' is-selected' : ''}`} onClick={() => setField('style', style as SignStyle)} aria-pressed={config.style === style}>
-                        {t(`style.${style}`)}
+                      <button type="button" key={style} className={`style-card${config.style === style ? ' is-selected' : ''}`} onClick={() => setField('style', style as SignStyle)} aria-pressed={config.style === style}>
+                        <StyleArt style={style} />
+                        <span className="style-card-label">{t(`style.${style}`)}</span>
+                        {config.style === style && <Check className="selected-check" size={14} />}
                       </button>
                     ))}
                   </div></fieldset>
@@ -287,6 +290,23 @@ export function StudioPage() {
               {stepId === 'materials' && (
                 <div className="studio-step-content">
                   <StepHeading step={5} title={t(STEP_TITLE_KEYS.materials)} body={t(STEP_BODY_KEYS.materials)} />
+                  <div className={`advise-card${config.materials.includes('unsure') ? ' is-active' : ''}`}>
+                    <div className="advise-card-copy">
+                      <span className="advise-card-icon"><WandSparkles size={17} /></span>
+                      <div>
+                        <strong>{t('studio.adviseTitle')}</strong>
+                        <p>{config.materials.includes('unsure') ? t('studio.adviseActive') : t('studio.adviseBody')}</p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className={`button ${config.materials.includes('unsure') ? 'button-outline' : 'button-primary'} button-small`}
+                      onClick={() => toggleMaterial('unsure')}
+                      aria-pressed={config.materials.includes('unsure')}
+                    >
+                      {t('studio.adviseAction')}
+                    </button>
+                  </div>
                   <MaterialPicker />
                   <OptionalDetails label={t('studio.moreOptions')}>
                     <fieldset className="choice-fieldset dimensions-fieldset"><legend>{t('studio.dimensions')} <span className="optional-label">{t('studio.optional')}</span></legend>

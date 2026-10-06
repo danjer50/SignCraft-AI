@@ -7,7 +7,7 @@ import App from './App';
  * loaded professional/admin workspaces and the result page opened without a project.
  */
 const routes = [
-  { path: '/', expected: /Votre façade mérite/ },
+  { path: '/', expected: /métamorphosée/ },
   { path: '/studio', expected: /Ajoutez une photo de votre devanture/ },
   { path: '/studio?step=5', expected: /Quelles matières pour votre enseigne/ },
   { path: '/result', expected: /Aucun concept à afficher pour le moment/ },

@@ -114,7 +114,7 @@ describe('simplified customer flow', () => {
     expect(screen.getByText('Acrylique (plexiglas) · Inox')).toBeInTheDocument();
 
     // Generate → Result
-    fireEvent.click(screen.getByRole('button', { name: /Préparer mon concept/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Créer mon enseigne/i }));
     expect(await screen.findByRole('heading', { level: 1, name: 'Votre projet prend forme.' })).toBeInTheDocument();
 
     // Honest demo result: never a fabricated render
@@ -124,7 +124,7 @@ describe('simplified customer flow', () => {
     expect(screen.getAllByText('ATELIER SABLE').length).toBeGreaterThan(0);
 
     // Result → Quote / WhatsApp
-    expect(screen.getByRole('button', { name: /Demander un devis/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Je veux cette enseigne/i })).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: /WhatsApp/i }).length).toBeGreaterThan(0);
   });
 
@@ -153,13 +153,13 @@ describe('simplified customer flow', () => {
     expect(await screen.findByText('Quelles matières pour votre enseigne ?')).toBeInTheDocument();
     expect(screen.getByText('0 / 6')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: /Préparer mon concept/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Créer mon enseigne/i }));
     expect(screen.getByRole('alert')).toHaveTextContent(/Choisissez au moins une matière/i);
     expect(screen.queryByRole('heading', { level: 1, name: 'Votre projet prend forme.' })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('checkbox', { name: /Conseillez-moi/i }));
     expect(screen.getByText('1 / 6')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /Préparer mon concept/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Créer mon enseigne/i }));
     expect(await screen.findByRole('heading', { level: 1, name: 'Votre projet prend forme.' })).toBeInTheDocument();
   });
 

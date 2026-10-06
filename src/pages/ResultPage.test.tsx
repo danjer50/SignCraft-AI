@@ -87,7 +87,7 @@ describe('result page states', () => {
     expect(screen.getByText('Acrylique (plexiglas) · Modules LED')).toBeInTheDocument();
     expect(screen.getByText('Lettres boîtiers')).toBeInTheDocument();
     expect(screen.getByText(/Étape suivante : devis ou WhatsApp/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Demander un devis/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Je veux cette enseigne/i })).toBeInTheDocument();
   });
 
   it('shows the generated concept beside the original photo when a provider confirmed an image', () => {

@@ -51,6 +51,7 @@ export function SiteHeader({ onOpenQuote }: SiteHeaderProps) {
           </nav>
           <div className="header-actions">
             <LanguageSwitcher />
+            <NavLink to="/studio" onClick={closeMenu} className="button button-primary header-cta">{t('home.heroCta')}</NavLink>
             <button className="button button-dark button-small header-quote" type="button" onClick={() => { closeMenu(); onOpenQuote(); }}>
               <span>{t('nav.contact')}</span><ArrowUpRight size={15} aria-hidden="true" />
             </button>

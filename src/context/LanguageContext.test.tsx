@@ -35,6 +35,10 @@ describe('language selection', () => {
 
     expect(screen.queryByRole('link', { name: /Espace pro/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /Demandes/i })).not.toBeInTheDocument();
-    expect(screen.getAllByRole('link')).toHaveLength(3); // brand, home, studio
+    // brand, home, studio and the customer CTA — no workspace links in the header.
+    const hrefs = screen.getAllByRole('link').map((link) => link.getAttribute('href'));
+    expect(hrefs).not.toContain('/professional');
+    expect(hrefs).not.toContain('/admin');
+    expect(hrefs).toHaveLength(4);
   });
 });
