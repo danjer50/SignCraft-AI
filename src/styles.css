@@ -770,25 +770,30 @@ img { display: block; max-width: 100%; }
 .optional-details-panel .choice-fieldset { margin-bottom: 4px; }
 .optional-details-note { margin: 0; color: #97a097; font-size: 9px; line-height: 1.6; }
 
-.material-fieldset legend { display: flex; align-items: center; gap: 9px; }
-.material-count { border: 1px solid #e0e2db; border-radius: 20px; background: #f7f8f4; padding: 3px 8px; color: #7b867d; font: 700 8px 'Manrope', sans-serif; letter-spacing: .06em; }
-.material-help { margin: -6px 0 14px; color: #8b948b; font-size: 9px; line-height: 1.6; }
-.material-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-.material-card { position: relative; min-height: 54px; display: flex; align-items: center; gap: 9px; border: 1px solid #e0e2db; border-radius: 5px; background: #fffefa; padding: 10px; color: #68746b; text-align: start; font-size: 10px; font-weight: 600; cursor: pointer; transition: border .18s ease, background .18s ease, color .18s ease; }
-.material-card:hover:not(:disabled) { border-color: #a8b6a9; }
-.material-card:disabled { opacity: .48; cursor: not-allowed; }
-.material-card.is-selected { border-color: #648375; background: #eef3ee; color: var(--forest-deep); }
-.material-name { overflow-wrap: anywhere; }
-.material-order { display: grid; flex: 0 0 auto; width: 20px; height: 20px; place-items: center; border-radius: 50%; background: var(--forest); color: #fffefa; font: 700 8px 'Manrope', sans-serif; }
-.material-card .selected-check { color: #507b5a; }
-.material-limit { margin: 11px 0 0; color: #85543d; font-size: 9px; line-height: 1.5; }
-.material-selection { margin-top: 15px; border-top: 1px solid #e8e7e0; padding-top: 12px; }
-.material-selection-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; }
-.material-chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid #cfd8cf; border-radius: 20px; background: #f2f6f1; padding: 4px 6px 4px 9px; color: #46584c; font-size: 9px; font-weight: 600; }
-.material-chip i { display: grid; width: 15px; height: 15px; place-items: center; border-radius: 50%; background: var(--forest); color: #fffefa; font: 700 7px 'Manrope', sans-serif; font-style: normal; }
-.material-chip-remove { display: grid; width: 17px; height: 17px; place-items: center; border: 0; border-radius: 50%; background: transparent; color: #74857a; cursor: pointer; }
-.material-chip-remove:hover { background: #dfe8df; color: var(--danger); }
-.material-clear { border: 0; color: #8b948b; font-size: 9px; }
+/* Material picker. Deliberately prefixed `material-picker-*`: the home page already owns
+   `.material-grid` / `.material-copy` etc., and sharing a selector broke both layouts. */
+.material-picker legend { color: #536158; font-size: 10px; font-weight: 700; }
+.material-picker-help { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin: 0 0 14px; color: #8b948b; font-size: 9px; line-height: 1.6; }
+.material-picker-count { flex: 0 0 auto; border: 1px solid #e0e2db; border-radius: 20px; background: #f7f8f4; padding: 3px 8px; color: #7b867d; font: 700 8px 'Manrope', sans-serif; letter-spacing: .06em; }
+.material-picker-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.material-picker-card { position: relative; min-height: 54px; display: flex; align-items: center; gap: 9px; border: 1px solid #e0e2db; border-radius: 5px; background: #fffefa; padding: 10px; color: #68746b; font-size: 10px; font-weight: 600; cursor: pointer; transition: border .18s ease, background .18s ease, color .18s ease, box-shadow .18s ease; }
+.material-picker-card:hover:not(.is-blocked) { border-color: #a8b6a9; }
+.material-picker-card.is-blocked { opacity: .48; cursor: not-allowed; }
+.material-picker-card.is-selected { border-color: #648375; background: #e9f1ea; color: var(--forest-deep); box-shadow: inset 0 0 0 1px rgba(100, 131, 117, .28); }
+/* A native checkbox stays visible, so the multi-select state never depends on custom CSS. */
+.material-picker-input { flex: 0 0 auto; width: 15px; height: 15px; margin: 0; accent-color: var(--forest); cursor: inherit; }
+.material-picker-input:disabled { cursor: not-allowed; }
+.material-picker-name { overflow-wrap: anywhere; }
+.material-picker-order { display: grid; flex: 0 0 auto; width: 20px; height: 20px; place-items: center; border-radius: 50%; background: var(--forest); color: #fffefa; font: 700 8px 'Manrope', sans-serif; }
+.material-picker-check { flex: 0 0 auto; margin-inline-start: auto; color: #507b5a; }
+.material-picker-limit { margin: 11px 0 0; color: #85543d; font-size: 9px; line-height: 1.5; }
+.material-picker-selection { margin-top: 15px; border-top: 1px solid #e8e7e0; padding-top: 12px; }
+.material-picker-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; }
+.material-picker-chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid #cfd8cf; border-radius: 20px; background: #f2f6f1; padding: 4px 6px 4px 9px; color: #46584c; font-size: 9px; font-weight: 600; }
+.material-picker-chip i { display: grid; width: 15px; height: 15px; place-items: center; border-radius: 50%; background: var(--forest); color: #fffefa; font: 700 7px 'Manrope', sans-serif; font-style: normal; }
+.material-picker-chip-remove { display: grid; width: 17px; height: 17px; place-items: center; border: 0; border-radius: 50%; background: transparent; color: #74857a; cursor: pointer; }
+.material-picker-chip-remove:hover { background: #dfe8df; color: var(--danger); }
+.material-picker-clear { border: 0; color: #8b948b; font-size: 9px; }
 
 .generation-panel { display: grid; justify-items: center; gap: 11px; min-height: 340px; align-content: center; padding: 34px 26px; text-align: center; }
 .generation-panel-mark { display: grid; width: 54px; height: 54px; place-items: center; border: 1px solid #dfe3da; border-radius: 50%; background: #f4f6f1; color: var(--forest); }
@@ -861,7 +866,7 @@ img { display: block; max-width: 100%; }
 
 /* Responsive refinements for the simplified flow */
 @media (max-width: 1050px) {
-  .material-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .material-picker-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 800px) {
@@ -876,9 +881,9 @@ img { display: block; max-width: 100%; }
   .progress-step { gap: 5px; }
   .progress-number { width: 23px; height: 23px; font-size: 7px; }
   .progress-label { max-width: 56px; font-size: 7px; }
-  .material-grid { grid-template-columns: minmax(0, 1fr); gap: 6px; }
-  .material-card { min-height: 46px; font-size: 9px; }
-  .material-help { font-size: 8px; }
+  .material-picker-grid { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .material-picker-card { min-height: 46px; font-size: 9px; }
+  .material-picker-help { font-size: 8px; }
   .optional-details-panel { gap: 12px; padding-inline-start: 12px; }
   .generation-panel { min-height: 250px; padding: 26px 16px; }
   .generation-panel h2 { font-size: 16px; }

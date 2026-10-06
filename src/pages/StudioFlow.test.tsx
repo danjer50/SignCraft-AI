@@ -105,8 +105,11 @@ describe('simplified customer flow', () => {
 
     // 05 · Materials — one sign can combine several of them
     expect(await screen.findByText('Quelles matières pour votre enseigne ?')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /Acrylique \(plexiglas\)/i }));
-    fireEvent.click(screen.getByRole('button', { name: /^Inox$/i }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /Acrylique \(plexiglas\)/i }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /^Inox$/i }));
+    // Native checkboxes: the second selection never cancels the first one.
+    expect(screen.getByRole('checkbox', { name: /Acrylique \(plexiglas\)/i })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: /^Inox$/i })).toBeChecked();
     expect(screen.getByText('2 / 6')).toBeInTheDocument();
     expect(screen.getByText('Acrylique (plexiglas) · Inox')).toBeInTheDocument();
 
@@ -154,7 +157,7 @@ describe('simplified customer flow', () => {
     expect(screen.getByRole('alert')).toHaveTextContent(/Choisissez au moins une matière/i);
     expect(screen.queryByRole('heading', { level: 1, name: 'Votre projet prend forme.' })).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: /Conseillez-moi/i }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /Conseillez-moi/i }));
     expect(screen.getByText('1 / 6')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Préparer mon concept/i }));
     expect(await screen.findByRole('heading', { level: 1, name: 'Votre projet prend forme.' })).toBeInTheDocument();
@@ -174,12 +177,12 @@ describe('simplified customer flow', () => {
     expect(screen.getByText('Acrylique (plexiglas) · Modules LED')).toBeInTheDocument();
 
     // Reach the documented limit: further materials are refused, not silently dropped.
-    fireEvent.click(screen.getByRole('button', { name: /Néon LED flex/i }));
-    fireEvent.click(screen.getByRole('button', { name: /Alucobond/i }));
-    fireEvent.click(screen.getByRole('button', { name: /^Bois$/i }));
-    fireEvent.click(screen.getByRole('button', { name: /PVC expansé/i }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /Néon LED flex/i }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /Alucobond/i }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /^Bois$/i }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /PVC expansé/i }));
     expect(screen.getByText('6 / 6')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Vinyle adhésif/i })).toBeDisabled();
+    expect(screen.getByRole('checkbox', { name: /Vinyle adhésif/i })).toBeDisabled();
     expect(screen.getByRole('status')).toHaveTextContent(/Limite de 6 matières atteinte/i);
 
     fireEvent.click(screen.getByRole('button', { name: /Tout désélectionner/i }));

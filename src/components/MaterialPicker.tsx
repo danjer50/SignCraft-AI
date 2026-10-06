@@ -8,9 +8,12 @@ function withCount(message: string, values: Record<string, number | string>): st
 }
 
 /**
- * Multi-select material picker. One sign may combine several materials; the selection order
- * is preserved and shown, because the first material is treated as the main one by the
- * prompt builder, the quote brief and the professional workspace.
+ * Multi-select material picker. One sign may combine several materials, so every option is a
+ * native checkbox: checking one material can never uncheck another, and the control keeps
+ * working (and stays visibly checked) even if the stylesheet fails to load.
+ *
+ * The selection order is preserved and shown, because the first material is treated as the
+ * main one by the prompt builder, the quote brief and the professional workspace.
  */
 export function MaterialPicker() {
   const { t } = useLanguage();
@@ -19,57 +22,63 @@ export function MaterialPicker() {
   const limitMessage = withCount(t('studio.materialsMax'), { max: MAX_SIGN_MATERIALS });
 
   return (
-    <fieldset className="choice-fieldset material-fieldset">
-      <legend>
-        <span>{t('studio.materials')}</span>
-        <span className="material-count">{withCount(t('studio.materialsCount'), { count: selected.length, max: MAX_SIGN_MATERIALS })}</span>
-      </legend>
-      <p className="material-help">{withCount(t('studio.materialsHelp'), { max: MAX_SIGN_MATERIALS })}</p>
+    <fieldset className="choice-fieldset material-picker">
+      <legend>{t('studio.materials')}</legend>
+      <p className="material-picker-help">
+        <span className="material-picker-count" aria-live="polite">
+          {withCount(t('studio.materialsCount'), { count: selected.length, max: MAX_SIGN_MATERIALS })}
+        </span>
+        {withCount(t('studio.materialsHelp'), { max: MAX_SIGN_MATERIALS })}
+      </p>
 
-      <div className="material-grid" role="group" aria-label={t('studio.materials')}>
+      <div className="material-picker-grid">
         {SIGN_MATERIALS.map((material) => {
           const position = selected.indexOf(material);
           const isSelected = position !== -1;
           const blocked = !isSelected && materialsAtLimit;
           return (
-            <button
+            // The input is nested (no htmlFor) so one tap toggles it exactly once.
+            <label
               key={material}
-              type="button"
-              className={`material-card${isSelected ? ' is-selected' : ''}`}
-              onClick={() => toggleMaterial(material)}
-              aria-pressed={isSelected}
-              disabled={blocked}
+              className={`material-picker-card${isSelected ? ' is-selected' : ''}${blocked ? ' is-blocked' : ''}`}
               title={blocked ? limitMessage : t(`material.${material}`)}
             >
-              {isSelected && <span className="material-order">{position + 1}</span>}
-              <span className="material-name">{t(`material.${material}`)}</span>
-              {isSelected && <Check className="selected-check" size={14} />}
-            </button>
+              <input
+                className="material-picker-input"
+                type="checkbox"
+                checked={isSelected}
+                disabled={blocked}
+                onChange={() => toggleMaterial(material)}
+              />
+              {isSelected && <span className="material-picker-order" aria-hidden="true">{position + 1}</span>}
+              <span className="material-picker-name">{t(`material.${material}`)}</span>
+              {isSelected && <Check className="material-picker-check" size={14} aria-hidden="true" />}
+            </label>
           );
         })}
       </div>
 
-      {materialsAtLimit && <p className="material-limit" role="status">{limitMessage}</p>}
+      {materialsAtLimit && <p className="material-picker-limit" role="status">{limitMessage}</p>}
 
       {selected.length > 0 && (
-        <div className="material-selection">
+        <div className="material-picker-selection">
           <span className="summary-label">{t('studio.materials')}</span>
-          <div className="material-selection-chips">
+          <div className="material-picker-chips">
             {selected.map((material, index) => (
-              <span className="material-chip" key={material}>
-                <i>{index + 1}</i>
+              <span className="material-picker-chip" key={material}>
+                <i aria-hidden="true">{index + 1}</i>
                 {t(`material.${material}`)}
                 <button
-                  className="material-chip-remove"
+                  className="material-picker-chip-remove"
                   type="button"
                   onClick={() => setMaterials(selected.filter((entry) => entry !== material))}
                   aria-label={`${t('studio.removeMaterial')} — ${t(`material.${material}`)}`}
                 >
-                  <X size={12} />
+                  <X size={12} aria-hidden="true" />
                 </button>
               </span>
             ))}
-            <button className="text-link material-clear" type="button" onClick={() => setMaterials([])}>
+            <button className="text-link material-picker-clear" type="button" onClick={() => setMaterials([])}>
               {t('studio.materialsClear')}
             </button>
           </div>
