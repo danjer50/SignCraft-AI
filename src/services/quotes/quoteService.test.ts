@@ -14,6 +14,7 @@ const sampleRequest: QuoteRequest = {
     category: 'retail',
     signType: 'threeD',
     style: 'modern',
+    materials: ['stainlessSteel', 'ledModules'],
     color: '#24463f',
     lighting: 'halo',
     exactText: 'ATELIER SABLE',

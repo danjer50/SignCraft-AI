@@ -1,4 +1,4 @@
-import { BUSINESS_CATEGORIES, LIGHTING_TYPES, SIGN_STYLES, SIGN_TYPES, type SignConfiguration } from '../../src/domain/sign';
+import { BUSINESS_CATEGORIES, LIGHTING_TYPES, MAX_SIGN_MATERIALS, SIGN_STYLES, SIGN_TYPES, isSignMaterial, type SignConfiguration, type SignMaterial } from '../../src/domain/sign';
 import { MAX_STOREFRONT_IMAGE_BYTES, ACCEPTED_IMAGE_TYPES } from '../../src/services/upload';
 import { MAX_AI_IMAGE_SIDE } from '../../src/services/ai/contracts';
 import { buildStorefrontEditPrompt, SIGNCRAFT_PROMPT_VERSION } from '../../src/services/ai/promptBuilder';
@@ -42,6 +42,21 @@ function isValidOptionalDimension(value: string, maximum: number): boolean {
   return Number.isFinite(numericValue) && numericValue >= 1 && numericValue <= maximum;
 }
 
+/**
+ * One sign may combine several materials. An absent field (older client build) means
+ * "no material requested yet"; anything else must be a short list of known materials.
+ */
+function parseMaterials(value: unknown): SignMaterial[] | null {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > MAX_SIGN_MATERIALS) return null;
+  const materials: SignMaterial[] = [];
+  for (const entry of value) {
+    if (!isSignMaterial(entry)) return null;
+    if (!materials.includes(entry)) materials.push(entry);
+  }
+  return materials;
+}
+
 function parseConfiguration(value: FormDataEntryValue | null): SignConfiguration | null {
   if (typeof value !== 'string' || value.length > 12_000) return null;
   try {
@@ -60,11 +75,14 @@ function parseConfiguration(value: FormDataEntryValue | null): SignConfiguration
     if (!SIGN_STYLES.includes(parsed.style as (typeof SIGN_STYLES)[number])) return null;
     if (!LIGHTING_TYPES.includes(parsed.lighting as (typeof LIGHTING_TYPES)[number])) return null;
     if (!/^#[0-9a-fA-F]{6}$/.test(parsed.color as string)) return null;
+    const materials = parseMaterials(parsed.materials);
+    if (!materials) return null;
     return {
       businessName,
       category: parsed.category as SignConfiguration['category'],
       signType: parsed.signType as SignConfiguration['signType'],
       style: parsed.style as SignConfiguration['style'],
+      materials,
       color: parsed.color as string,
       lighting: parsed.lighting as SignConfiguration['lighting'],
       exactText,

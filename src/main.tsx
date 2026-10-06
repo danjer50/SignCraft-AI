@@ -1,16 +1,23 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
-import { LanguageProvider } from './context/LanguageContext';
-import { ProjectProvider } from './context/ProjectContext';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import './styles.css';
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
+/** Guarantees a mount node exists so a broken document can never leave a blank screen. */
+function resolveMountNode(): HTMLElement {
+  const existing = document.getElementById('root');
+  if (existing) return existing;
+  const created = document.createElement('div');
+  created.id = 'root';
+  document.body.append(created);
+  return created;
+}
+
+ReactDOM.createRoot(resolveMountNode()).render(
   <React.StrictMode>
-    <LanguageProvider>
-      <ProjectProvider>
-        <App />
-      </ProjectProvider>
-    </LanguageProvider>
+    <ErrorBoundary variant="root">
+      <App />
+    </ErrorBoundary>
   </React.StrictMode>,
 );

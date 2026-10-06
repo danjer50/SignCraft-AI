@@ -16,9 +16,17 @@ export function SiteFooter() {
           </div>
         </div>
         <div className="footer-nav">
-          <Link to="/studio">{t('nav.studio')} <ArrowUpRight size={14} /></Link>
-          <Link to="/professional">{t('nav.professional')} <ArrowUpRight size={14} /></Link>
-          <Link to="/admin">{t('nav.admin')} <ArrowUpRight size={14} /></Link>
+          <div className="footer-nav-group">
+            <span className="footer-nav-label">{t('nav.customer')}</span>
+            <Link to="/">{t('nav.home')} <ArrowUpRight size={14} /></Link>
+            <Link to="/studio">{t('nav.studio')} <ArrowUpRight size={14} /></Link>
+          </div>
+          {/* Professional and admin tools stay reachable but separate from the customer flow. */}
+          <div className="footer-nav-group">
+            <span className="footer-nav-label">{t('nav.workspaces')}</span>
+            <Link to="/professional">{t('nav.professional')} <ArrowUpRight size={14} /></Link>
+            <Link to="/admin">{t('nav.admin')} <ArrowUpRight size={14} /></Link>
+          </div>
         </div>
       </div>
       <div className="page-container footer-bottom">

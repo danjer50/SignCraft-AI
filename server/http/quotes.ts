@@ -1,4 +1,4 @@
-import { BUSINESS_CATEGORIES, LIGHTING_TYPES, QUOTE_STATUSES, SIGN_STYLES, SIGN_TYPES, type QuoteRequest } from '../../src/domain/sign';
+import { BUSINESS_CATEGORIES, LIGHTING_TYPES, MAX_SIGN_MATERIALS, QUOTE_STATUSES, SIGN_STYLES, SIGN_TYPES, isSignMaterial, type QuoteRequest } from '../../src/domain/sign';
 import { ACCEPTED_IMAGE_TYPES, MAX_STOREFRONT_IMAGE_BYTES } from '../../src/services/upload';
 import { createQuoteRepository } from '../quotes/repositoryFactory';
 import type { QuoteEnvironment } from '../quotes/types';
@@ -13,6 +13,16 @@ function json(body: unknown, status: number): Response {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * A quote may combine several materials. The field is optional so drafts saved by an older
+ * build remain valid; when present it must be a short list of known materials.
+ */
+function isValidMaterialSelection(value: unknown): boolean {
+  if (value === undefined) return true;
+  if (!Array.isArray(value) || value.length > MAX_SIGN_MATERIALS) return false;
+  return value.every((entry) => isSignMaterial(entry));
 }
 
 function isQuoteRequest(value: unknown): value is QuoteRequest {
@@ -33,6 +43,7 @@ function isQuoteRequest(value: unknown): value is QuoteRequest {
   if (!SIGN_TYPES.includes(configuration.signType as (typeof SIGN_TYPES)[number])) return false;
   if (!SIGN_STYLES.includes(configuration.style as (typeof SIGN_STYLES)[number])) return false;
   if (!LIGHTING_TYPES.includes(configuration.lighting as (typeof LIGHTING_TYPES)[number])) return false;
+  if (!isValidMaterialSelection(configuration.materials)) return false;
   if (typeof configuration.color !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(configuration.color)) return false;
   if (typeof configuration.exactText !== 'string' || configuration.exactText.trim().length < 1 || configuration.exactText.length > 180) return false;
   if (typeof configuration.notes !== 'string' || configuration.notes.length > 2_000) return false;

@@ -1,6 +1,7 @@
 import { ArrowRight, Box, CircleDot, ClipboardList, FileCog, Lightbulb, PanelsTopLeft, Ruler, Scissors, Wrench } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Seo } from '../components/Seo';
+import { WorkspaceNote } from '../components/WorkspaceNote';
 import { useLanguage } from '../context/LanguageContext';
 
 const workflowKeys = ['pro.workflow.1', 'pro.workflow.2', 'pro.workflow.3', 'pro.workflow.4', 'pro.workflow.5', 'pro.workflow.6', 'pro.workflow.7', 'pro.workflow.8'];
@@ -18,6 +19,7 @@ export function ProfessionalPage() {
   return (
     <div className="professional-page page-container page-pad">
       <Seo title="Espace professionnel" description="Espace de préparation métier pour relier le concept approuvé aux plans, matériaux, découpes, devis et à l’installation." noIndex />
+      <WorkspaceNote />
       <header className="professional-heading">
         <div><span className="eyebrow"><span className="eyebrow-line" />{t('pro.eyebrow')}</span><h1>{t('pro.title')}</h1><p>{t('pro.lead')}</p></div>
         <span className="professional-ready-pill"><CircleDot size={14} />{t('pro.previewBadge')}</span>

@@ -1,28 +1,17 @@
 import type { AIConceptResult, AIErrorCode, SignConfiguration } from '../../domain/sign';
+import { AI_ERROR_CODES, normalizeMaterials } from '../../domain/sign';
 import { clientConfig } from '../config';
 import { DemoAIProvider } from './demoProvider';
 import type { ImageEditingRequest } from './contracts';
 import { buildStorefrontEditPrompt, SIGNCRAFT_PROMPT_VERSION } from './promptBuilder';
 import { prepareCloudflareReferenceImage } from './imagePreparation';
 
-const AI_ERROR_CODES: readonly AIErrorCode[] = [
-  'AI_NOT_CONFIGURED',
-  'AI_AUTHENTICATION',
-  'AI_RATE_LIMITED',
-  'AI_CREDITS_EXHAUSTED',
-  'AI_TIMEOUT',
-  'AI_PROVIDER_UNAVAILABLE',
-  'AI_INVALID_RESPONSE',
-  'AI_IMAGE_PREPARATION',
-  'AI_NETWORK_ERROR',
-  'AI_REQUEST_REJECTED',
-];
-
 function normalizedConfiguration(configuration: SignConfiguration): SignConfiguration {
   return {
     ...configuration,
     businessName: configuration.businessName.trim(),
     exactText: configuration.exactText.trim() ? configuration.exactText : configuration.businessName.trim(),
+    materials: normalizeMaterials(configuration.materials),
   };
 }
 
@@ -41,6 +30,12 @@ function errorResult(
     sourceImageTransfer,
   };
 }
+
+/**
+ * Client-side guard so a stalled connection can never leave the studio stuck on its loading
+ * panel. It is deliberately longer than the server's own provider timeout.
+ */
+export const AI_REQUEST_TIMEOUT_MS = 120_000;
 
 export async function generateStorefrontConcept(
   request: Omit<ImageEditingRequest, 'prompt' | 'preserveSourceArchitecture' | 'exactTextOverlayRequired'>,
@@ -68,6 +63,8 @@ export async function generateStorefrontConcept(
   }
 
   let requestStarted = false;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), AI_REQUEST_TIMEOUT_MS);
   try {
     const payload = new FormData();
     payload.append('storefrontImage', preparedImage, 'storefront.jpg');
@@ -76,7 +73,7 @@ export async function generateStorefrontConcept(
     if (fullRequest.mask) payload.append('mask', fullRequest.mask, 'sign-mask.png');
 
     requestStarted = true;
-    const response = await fetch('/api/ai/generate-sign', { method: 'POST', body: payload });
+    const response = await fetch('/api/ai/generate-sign', { method: 'POST', body: payload, signal: controller.signal });
     const body = (await response.json().catch(() => ({}))) as {
       status?: string;
       providerId?: string;
@@ -105,11 +102,22 @@ export async function generateStorefrontConcept(
       typeof body.message === 'string' ? body.message : 'The secure server did not confirm successful AI processing.',
       typeof body.providerId === 'string' ? body.providerId : 'server-ai-api',
     );
-  } catch {
+  } catch (error) {
+    const aborted = controller.signal.aborted || (error instanceof DOMException && error.name === 'AbortError');
+    if (aborted) {
+      // The request may have reached the server, so the photo transfer stays unconfirmed.
+      return errorResult(
+        'AI_TIMEOUT',
+        requestStarted ? 'UNKNOWN' : 'LOCAL_ONLY',
+        'The secure image service did not answer in time. No result was confirmed; you can retry.',
+      );
+    }
     return errorResult(
       'AI_NETWORK_ERROR',
       requestStarted ? 'UNKNOWN' : 'LOCAL_ONLY',
       'The connection ended before the secure server confirmed an AI result.',
     );
+  } finally {
+    clearTimeout(timeout);
   }
 }

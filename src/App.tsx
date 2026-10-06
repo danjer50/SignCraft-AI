@@ -1,13 +1,20 @@
-import { useEffect } from 'react';
+import { lazy, useEffect } from 'react';
 import { BrowserRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { AppLayout } from './components/AppLayout';
-import { useLanguage } from './context/LanguageContext';
-import { AdminPage } from './pages/AdminPage';
+import { LanguageProvider, useLanguage } from './context/LanguageContext';
+import { ProjectProvider } from './context/ProjectContext';
 import { HomePage } from './pages/HomePage';
 import { NotFoundPage } from './pages/NotFoundPage';
-import { ProfessionalPage } from './pages/ProfessionalPage';
 import { ResultPage } from './pages/ResultPage';
 import { StudioPage } from './pages/StudioPage';
+
+/**
+ * The customer journey (home, studio, result) stays in the main bundle so it renders
+ * immediately. Professional and admin workspaces are separate, lazily loaded chunks: they
+ * are never part of the simple customer flow and never delay it.
+ */
+const ProfessionalPage = lazy(() => import('./pages/ProfessionalPage').then((module) => ({ default: module.ProfessionalPage })));
+const AdminPage = lazy(() => import('./pages/AdminPage').then((module) => ({ default: module.AdminPage })));
 
 function ScrollToTop() {
   const { pathname } = useLocation();
@@ -34,6 +41,13 @@ function RoutedApp() {
   );
 }
 
+/** Self-contained root: providers live here so the app cannot be mounted without them. */
 export default function App() {
-  return <BrowserRouter><RoutedApp /></BrowserRouter>;
+  return (
+    <LanguageProvider>
+      <ProjectProvider>
+        <BrowserRouter><RoutedApp /></BrowserRouter>
+      </ProjectProvider>
+    </LanguageProvider>
+  );
 }

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#f5f3ee" />
     <title>SignCraft AI — Votre façade mérite une enseigne à sa mesure</title>
-    <meta name="description" content="Concevez une enseigne sur mesure à partir de la photo de votre façade. Configurez le style, les matériaux, l’éclairage et préparez une demande de devis claire." />
+    <meta name="description" content="Concevez une enseigne sur mesure à partir de la photo de votre façade. Choisissez le type, le style et plusieurs matières, puis préparez une demande de devis claire." />
     <meta property="og:type" content="website" />
     <meta property="og:title" content="SignCraft AI — Atelier d’enseignes" />
     <meta property="og:description" content="De la photo de votre devanture au brief de fabrication, concevez votre enseigne sur mesure." />
@@ -15,9 +15,32 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&family=Noto+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <style>
+      /* First paint: a branded loading state so a slow bundle never shows a white screen.
+         React replaces the contents of #root as soon as the app mounts. */
+      .boot-splash { min-height: 100vh; display: grid; place-content: center; justify-items: center; gap: 14px; background: #f5f3ee; color: #202d29; font-family: 'DM Sans', 'Noto Sans Arabic', sans-serif; text-align: center; padding: 24px; }
+      .boot-splash-mark { width: 46px; height: 46px; display: grid; place-items: center; border: 1px solid #deded5; border-radius: 50%; background: #fffefa; color: #183a33; }
+      .boot-splash-spin { width: 18px; height: 18px; border: 2px solid rgba(24, 58, 51, .18); border-top-color: #183a33; border-radius: 50%; animation: boot-spin .9s linear infinite; }
+      .boot-splash-name { margin: 0; font: 800 14px/1 'Manrope', 'DM Sans', sans-serif; letter-spacing: -.03em; }
+      .boot-splash-note { margin: 0; color: #717a73; font-size: 11px; letter-spacing: .04em; }
+      @keyframes boot-spin { to { transform: rotate(360deg); } }
+      .boot-noscript { max-width: 460px; margin: 0 auto; padding: 40px 24px; color: #202d29; font-family: 'DM Sans', sans-serif; font-size: 14px; line-height: 1.7; text-align: center; }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="boot-splash">
+        <span class="boot-splash-mark"><span class="boot-splash-spin"></span></span>
+        <p class="boot-splash-name">SignCraft AI</p>
+        <p class="boot-splash-note">Chargement de l’atelier…</p>
+      </div>
+    </div>
+    <noscript>
+      <div class="boot-noscript">
+        <p><strong>SignCraft AI a besoin de JavaScript.</strong></p>
+        <p>Activez JavaScript dans ce navigateur pour concevoir votre enseigne, ou écrivez-nous sur WhatsApp pour préparer votre projet avec l’atelier.</p>
+      </div>
+    </noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_SIGN_CONFIGURATION } from '../../domain/sign';
+import { DEFAULT_SIGN_CONFIGURATION, normalizeMaterials } from '../../domain/sign';
 import { DemoAIProvider } from './demoProvider';
 import type { ImageEditingRequest } from './contracts';
 import { buildStorefrontEditPrompt } from './promptBuilder';
@@ -30,6 +30,42 @@ describe('storefront image-edit architecture', () => {
     expect(prompt).toContain('ATELIER LUNE · حروف');
     expect(prompt).toContain('structured exact text and the separate SVG/HTML typography proof remain authoritative for spelling');
     expect(prompt).toContain('Do not add any extra windows');
+  });
+
+  it('describes every requested material, in the customer’s own priority order', () => {
+    const prompt = buildStorefrontEditPrompt({
+      ...configuration,
+      materials: ['stainlessSteel', 'ledModules', 'acrylic'],
+    });
+    expect(prompt).toContain("Requested fabrication materials, in the customer's priority order: brushed or polished stainless steel; integrated LED modules with a diffusing face; polished cast acrylic (plexiglass).");
+    expect(prompt).toContain('combine them plausibly on one sign');
+    expect(prompt).toContain('instead of duplicating the sign');
+  });
+
+  it('never invents a material when the customer has not chosen one', () => {
+    const prompt = buildStorefrontEditPrompt({ ...configuration, materials: [] });
+    expect(prompt).toContain('No specific material was requested yet');
+    expect(prompt).toContain('without inventing branded products');
+    expect(prompt).not.toContain('polished cast acrylic');
+
+    const unsureOnly = buildStorefrontEditPrompt({ ...configuration, materials: ['unsure'] });
+    expect(unsureOnly).toContain('No specific material was requested yet');
+  });
+
+  it('keeps the “advise me” choice honest when it is combined with real materials', () => {
+    const prompt = buildStorefrontEditPrompt({ ...configuration, materials: ['wood', 'unsure'] });
+    expect(prompt).toContain('treated exterior wood');
+    expect(prompt).toContain('open to a professional recommendation for any remaining part');
+    expect(prompt).not.toContain('a professionally appropriate material chosen by the sign maker');
+  });
+
+  it('ignores impossible material values instead of leaking them into the prompt', () => {
+    const prompt = buildStorefrontEditPrompt({
+      ...configuration,
+      materials: normalizeMaterials(['acrylic', 'unobtainium', 'acrylic', 'pvc']),
+    });
+    expect(prompt).toContain('polished cast acrylic (plexiglass); expanded PVC foam board');
+    expect(prompt).not.toContain('unobtainium');
   });
 
   it('preserves exact sign text including intentional surrounding whitespace', () => {

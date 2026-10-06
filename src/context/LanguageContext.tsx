@@ -14,10 +14,21 @@ interface LanguageContextValue {
 const STORAGE_KEY = 'signcraft:locale';
 const LanguageContext = createContext<LanguageContextValue | null>(null);
 
-function initialLocale(): Locale {
+function translateWith(locale: Locale) {
+  return (key: TranslationKey | string): string => {
+    const selected = messages[locale] as Record<string, string>;
+    return selected[key] ?? (messages.fr as Record<string, string>)[key] ?? key;
+  };
+}
+
+function isLocale(value: unknown): value is Locale {
+  return value === 'fr' || value === 'en' || value === 'ar';
+}
+
+function storedLocale(): Locale {
   try {
     const value = localStorage.getItem(STORAGE_KEY);
-    if (value === 'fr' || value === 'en' || value === 'ar') return value;
+    if (isLocale(value)) return value;
   } catch {
     // Private browsing may disable local storage; French remains the default.
   }
@@ -25,7 +36,7 @@ function initialLocale(): Locale {
 }
 
 export function LanguageProvider({ children }: { children: ReactNode }) {
-  const [locale, setLocaleState] = useState<Locale>(initialLocale);
+  const [locale, setLocaleState] = useState<Locale>(storedLocale);
   const direction: 'ltr' | 'rtl' = locale === 'ar' ? 'rtl' : 'ltr';
 
   useEffect(() => {
@@ -40,10 +51,7 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
   }, [locale, direction]);
 
   const setLocale = useCallback((next: Locale) => setLocaleState(next), []);
-  const t = useCallback((key: TranslationKey | string) => {
-    const selected = messages[locale] as Record<string, string>;
-    return selected[key] ?? (messages.fr as Record<string, string>)[key] ?? key;
-  }, [locale]);
+  const t = useMemo(() => translateWith(locale), [locale]);
 
   const value = useMemo(() => ({ locale, direction, setLocale, t }), [locale, direction, setLocale, t]);
   return <LanguageContext.Provider value={value}>{children}</LanguageContext.Provider>;
@@ -53,4 +61,24 @@ export function useLanguage(): LanguageContextValue {
   const context = useContext(LanguageContext);
   if (!context) throw new Error('useLanguage must be used inside LanguageProvider');
   return context;
+}
+
+/**
+ * Translation access for crash screens. It never throws: if the provider itself failed, the
+ * fallback still renders localized text from the stored locale instead of a blank page.
+ */
+export function useSafeLanguage(): LanguageContextValue {
+  const context = useContext(LanguageContext);
+  const locale = context?.locale ?? storedLocale();
+  const direction: 'ltr' | 'rtl' = locale === 'ar' ? 'rtl' : 'ltr';
+  const setLocale = useCallback((next: Locale) => {
+    try {
+      localStorage.setItem(STORAGE_KEY, next);
+    } catch {
+      // Without a provider the next full page load picks the value up.
+    }
+    window.location.reload();
+  }, []);
+  const t = useMemo(() => translateWith(locale), [locale]);
+  return context ?? { locale, direction, setLocale, t };
 }
