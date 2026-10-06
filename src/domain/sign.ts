@@ -116,6 +116,18 @@ export interface QuoteRequest {
   conceptReference: ConceptReference;
 }
 
+export type AIErrorCode =
+  | 'AI_NOT_CONFIGURED'
+  | 'AI_AUTHENTICATION'
+  | 'AI_RATE_LIMITED'
+  | 'AI_CREDITS_EXHAUSTED'
+  | 'AI_TIMEOUT'
+  | 'AI_PROVIDER_UNAVAILABLE'
+  | 'AI_INVALID_RESPONSE'
+  | 'AI_IMAGE_PREPARATION'
+  | 'AI_NETWORK_ERROR'
+  | 'AI_REQUEST_REJECTED';
+
 export type AIConceptResult =
   | {
       status: 'GENERATED';
@@ -131,6 +143,7 @@ export type AIConceptResult =
       message: string;
       createdAt: string;
       sourceImageTransfer: 'LOCAL_ONLY' | 'SENT_TO_SERVER' | 'UNKNOWN';
+      errorCode?: AIErrorCode;
     };
 
 export const DEFAULT_SIGN_CONFIGURATION: SignConfiguration = {

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, RefreshCw, Sparkles } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { BeforeAfterComparison } from '../components/BeforeAfterComparison';
@@ -9,6 +9,7 @@ import { useProject } from '../context/ProjectContext';
 import { SIGN_STYLES, type SignStyle } from '../domain/sign';
 import { generateStorefrontConcept } from '../services/ai';
 import { clientConfig } from '../services/config';
+import { aiErrorMessageKey, photoPrivacyMessageKey } from '../services/ai/presentation';
 import { useQuoteDialog } from '../components/QuoteDialogContext';
 
 export function ResultPage() {
@@ -16,35 +17,52 @@ export function ResultPage() {
   const { state, setConcept, updateConfiguration } = useProject();
   const openQuote = useQuoteDialog();
   const [busy, setBusy] = useState(false);
+  const generationLock = useRef(false);
   const concept = state.lastConcept;
   const config = state.configuration;
   const generated = concept?.status === 'GENERATED';
   const localeTag = locale === 'fr' ? 'fr-FR' : locale === 'ar' ? 'ar-TN' : 'en-US';
   const photoReferenceLabel = !state.photo
     ? t('result.noPhoto')
-    : concept?.sourceImageTransfer === 'SENT_TO_SERVER'
-      ? t('result.photoSent')
-      : concept?.sourceImageTransfer === 'UNKNOWN'
-        ? t('result.photoTransferUnknown')
-        : t('result.notUploaded');
-  const photoPrivacyNote = concept?.sourceImageTransfer === 'SENT_TO_SERVER'
-    ? t('studio.photoSentNotice')
-    : concept?.sourceImageTransfer === 'UNKNOWN'
-      ? t('studio.photoUnknownNotice')
-      : clientConfig.aiMode === 'api' || clientConfig.quoteMode === 'api'
-        ? t('studio.photoApiNotice')
-        : t('studio.photoLocalNotice');
+    : generated
+      ? t('result.photoProcessed')
+      : concept?.sourceImageTransfer === 'SENT_TO_SERVER'
+        ? t('result.photoSent')
+        : concept?.sourceImageTransfer === 'UNKNOWN'
+          ? t('result.photoTransferUnknown')
+          : t('result.notUploaded');
+  const photoPrivacyNote = t(photoPrivacyMessageKey(concept, clientConfig.aiMode, clientConfig.quoteMode));
+  const resultStatusLabel = generated
+    ? t('result.generated')
+    : concept?.status === 'ERROR'
+      ? t('ai.failedBadge')
+      : t('studio.aiDemoBadge');
+  const resultMessage = concept?.status === 'ERROR'
+    ? t(aiErrorMessageKey(concept.errorCode))
+    : t('result.unavailableBody');
 
   const regenerate = async () => {
+    if (generationLock.current) return;
     if (!state.photo?.file) {
       setConcept({ status: 'UNAVAILABLE', providerId: 'demo-unconfigured', message: t('studio.photoReupload'), createdAt: new Date().toISOString(), sourceImageTransfer: 'LOCAL_ONLY' });
       return;
     }
+    generationLock.current = true;
     setBusy(true);
     try {
       const result = await generateStorefrontConcept({ sourceImage: state.photo.file, configuration: config });
       setConcept(result);
+    } catch {
+      setConcept({
+        status: 'ERROR',
+        providerId: 'signcraft-ai-client',
+        errorCode: 'AI_NETWORK_ERROR',
+        message: 'The connection ended before a generation result could be confirmed.',
+        createdAt: new Date().toISOString(),
+        sourceImageTransfer: 'UNKNOWN',
+      });
     } finally {
+      generationLock.current = false;
       setBusy(false);
     }
   };
@@ -57,13 +75,13 @@ export function ResultPage() {
       <Link className="back-link" to="/studio"><ArrowLeft size={15} />{t('result.editBrief')}</Link>
       <div className="result-heading">
         <div><span className="eyebrow"><span className="eyebrow-line" />{t('result.eyebrow')}</span><h1>{t('result.title')}</h1><p>{t('result.lead')}</p></div>
-        <span className={`result-status-pill${generated ? ' is-ready' : ''}`}><span className={generated ? 'status-ready-dot' : 'status-offline-dot'} />{generated ? t('result.generated') : t('studio.aiDemoBadge')}</span>
+        <span className={`result-status-pill${generated ? ' is-ready' : ''}`}><span className={generated ? 'status-ready-dot' : 'status-offline-dot'} />{resultStatusLabel}</span>
       </div>
 
       <section className="result-compare-section">
         <div className="result-section-top"><div><span className="eyebrow">01 · {t('result.reference')}</span><h2>{t('result.comparisonTitle')}</h2></div><span className="result-project-id">SC / {state.id.slice(0, 8).toUpperCase()}</span></div>
         <BeforeAfterComparison beforeImage={state.photo?.previewUrl} afterImage={generated ? concept.imageUrl : undefined} />
-        {!generated && <div className="result-unavailable-banner"><span className="status-offline-dot" /><div><strong>{concept?.status === 'ERROR' ? t('ai.apiUnavailable') : t('result.unavailableTitle')}</strong><p>{concept?.status === 'ERROR' ? t('ai.apiUnavailable') : t('result.unavailableBody')}</p></div></div>}
+        {!generated && <div className="result-unavailable-banner" role="status" aria-live="polite"><span className="status-offline-dot" /><div><strong>{concept?.status === 'ERROR' ? t('ai.failedBadge') : t('result.unavailableTitle')}</strong><p>{resultMessage}</p></div></div>}
       </section>
 
       <div className="result-action-row">
@@ -75,7 +93,7 @@ export function ResultPage() {
         </div>
         <div className="result-actions">
           <Link className="button button-outline" to="/studio?step=2"><Sparkles size={16} />{t('result.tryStyle')}</Link>
-          <button className="button button-dark" onClick={() => void regenerate()} disabled={busy || !state.photo?.file} type="button">
+          <button className="button button-dark" onClick={() => void regenerate()} disabled={busy || !state.photo?.file} type="button" aria-busy={busy}>
             {busy ? <span className="spin-dot" /> : <RefreshCw size={16} />}{busy ? t('ai.working') : t('result.tryAgain')}
           </button>
         </div>

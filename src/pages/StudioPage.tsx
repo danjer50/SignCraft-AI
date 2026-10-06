@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, Box, Check, CircleHelp, Lightbulb, PanelsTopLeft, PenTool, Sparkles, WandSparkles } from 'lucide-react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import type { BusinessCategory, LightingType, SignStyle, SignType } from '../domain/sign';
@@ -10,6 +10,7 @@ import { Seo } from '../components/Seo';
 import { PhotoUploadField } from '../components/PhotoUploadField';
 import { generateStorefrontConcept } from '../services/ai';
 import { clientConfig } from '../services/config';
+import { photoPrivacyMessageKey } from '../services/ai/presentation';
 import { useQuoteDialog } from '../components/QuoteDialogContext';
 
 const swatches = ['#24463f', '#222726', '#d7a46a', '#eee7d8', '#a45b45', '#445a7a', '#829b91', '#f3bb42'];
@@ -30,13 +31,7 @@ function StudioSummary() {
   const config = state.configuration;
   const businessLabel = config.businessName || t('studio.summaryNotSet');
   const visibleText = config.exactText || config.businessName || t('studio.summaryNotSet');
-  const photoPrivacyBody = state.lastConcept?.sourceImageTransfer === 'SENT_TO_SERVER'
-    ? t('studio.photoSentNotice')
-    : state.lastConcept?.sourceImageTransfer === 'UNKNOWN'
-      ? t('studio.photoUnknownNotice')
-      : clientConfig.aiMode === 'api' || clientConfig.quoteMode === 'api'
-        ? t('studio.privacyApiBody')
-        : t('studio.privacyBody');
+  const photoPrivacyBody = t(photoPrivacyMessageKey(state.lastConcept, clientConfig.aiMode, clientConfig.quoteMode));
   return (
     <aside className="studio-summary-card">
       <div className="summary-card-header"><div><span className="eyebrow">SIGNCRAFT · 01</span><h2>{t('studio.summaryTitle')}</h2></div><span className="summary-pin"><CircleHelp size={17} /></span></div>
@@ -65,6 +60,7 @@ export function StudioPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [busy, setBusy] = useState(false);
+  const generationLock = useRef(false);
   const [validationMessage, setValidationMessage] = useState('');
   const rawStep = Number(searchParams.get('step') ?? '1');
   const step = Number.isFinite(rawStep) ? Math.min(3, Math.max(1, rawStep)) : 1;
@@ -85,7 +81,9 @@ export function StudioPage() {
   };
 
   const prepareConcept = async () => {
+    if (generationLock.current) return;
     if (!state.photo?.file) { setValidationMessage(t('studio.photoReupload')); return; }
+    generationLock.current = true;
     setBusy(true);
     setValidationMessage('');
     try {
@@ -93,6 +91,7 @@ export function StudioPage() {
       setConcept(result);
       navigate('/result');
     } finally {
+      generationLock.current = false;
       setBusy(false);
     }
   };
@@ -185,11 +184,11 @@ export function StudioPage() {
               </label>
               <div className="concept-callout">
                 <div className="concept-callout-icon"><WandSparkles size={18} /></div>
-                <div><strong>{clientConfig.aiMode === 'demo' ? t('studio.aiDemoBadge') : t('studio.generate')}</strong><p>{t('result.unavailableBody')}</p></div>
+                <div><strong>{clientConfig.aiMode === 'demo' ? t('studio.aiDemoBadge') : t('studio.generate')}</strong><p>{clientConfig.aiMode === 'demo' ? t('result.unavailableBody') : t('studio.aiApiCallout')}</p></div>
               </div>
               {validationMessage && <div className="validation-message" role="alert">{validationMessage}</div>}
               <div className="final-actions">
-                <button type="button" className="button button-dark button-large" onClick={() => void prepareConcept()} disabled={busy || !state.photo?.file}>
+                <button type="button" className="button button-dark button-large" onClick={() => void prepareConcept()} disabled={busy || !state.photo?.file} aria-busy={busy}>
                   {busy ? <span className="spin-dot" /> : <Sparkles size={17} />}{busy ? t('ai.working') : t('studio.generate')}<ArrowRight size={16} />
                 </button>
                 <button type="button" className="button button-outline button-large" onClick={openQuote}>{t('studio.quote')}</button>

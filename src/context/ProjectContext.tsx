@@ -73,7 +73,7 @@ function reducer(state: ProjectState, action: ProjectAction): ProjectState {
     case 'SET_FIELD':
       return { ...state, configuration: { ...state.configuration, [action.key]: action.value } };
     case 'SET_PHOTO':
-      return { ...state, photo: action.photo };
+      return { ...state, photo: action.photo, lastConcept: null };
     case 'SET_CONCEPT':
       return { ...state, lastConcept: action.concept };
     case 'RESET':

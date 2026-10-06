@@ -3,6 +3,7 @@ import { DEFAULT_SIGN_CONFIGURATION } from '../../domain/sign';
 import { DemoAIProvider } from './demoProvider';
 import type { ImageEditingRequest } from './contracts';
 import { buildStorefrontEditPrompt } from './promptBuilder';
+import { generateStorefrontConcept } from './client';
 
 const configuration = {
   ...DEFAULT_SIGN_CONFIGURATION,
@@ -27,8 +28,13 @@ describe('storefront image-edit architecture', () => {
     expect(prompt).toContain('camera viewpoint');
     expect(prompt).toContain('realistic mounting points');
     expect(prompt).toContain('ATELIER LUNE · حروف');
-    expect(prompt).toContain('separate precise vector text overlay');
+    expect(prompt).toContain('structured exact text and the separate SVG/HTML typography proof remain authoritative for spelling');
     expect(prompt).toContain('Do not add any extra windows');
+  });
+
+  it('preserves exact sign text including intentional surrounding whitespace', () => {
+    const exactText = '  Atelier Sable · حرف  ';
+    expect(buildStorefrontEditPrompt({ ...configuration, exactText })).toContain(`Exact sign wording and character order: “${exactText}”.`);
   });
 
   it('returns an honest unavailable state instead of a fabricated image', async () => {
@@ -39,5 +45,12 @@ describe('storefront image-edit architecture', () => {
     if (result.status === 'UNAVAILABLE' || result.status === 'ERROR') {
       expect(result.message).toMatch(/has not been edited/i);
     }
+  });
+
+  it('keeps the frontend demo provider local and unavailable by default', async () => {
+    const result = await generateStorefrontConcept({ sourceImage: request.sourceImage, configuration: request.configuration });
+    expect(result.status).toBe('UNAVAILABLE');
+    expect(result.sourceImageTransfer).toBe('LOCAL_ONLY');
+    expect(result).not.toHaveProperty('imageUrl');
   });
 });

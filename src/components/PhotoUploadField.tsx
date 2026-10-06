@@ -4,6 +4,7 @@ import { useProject } from '../context/ProjectContext';
 import { useLanguage } from '../context/LanguageContext';
 import { validateStorefrontImage } from '../services/upload';
 import { clientConfig } from '../services/config';
+import { photoPrivacyMessageKey } from '../services/ai/presentation';
 
 export function PhotoUploadField() {
   const { state, setPhotoFile, removePhoto } = useProject();
@@ -13,14 +14,7 @@ export function PhotoUploadField() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const photo = state.photo;
-  const transferState = state.lastConcept?.sourceImageTransfer;
-  const privacyNote = transferState === 'SENT_TO_SERVER'
-    ? t('studio.photoSentNotice')
-    : transferState === 'UNKNOWN'
-      ? t('studio.photoUnknownNotice')
-      : clientConfig.aiMode === 'api' || clientConfig.quoteMode === 'api'
-        ? t('studio.photoApiNotice')
-        : t('studio.photoLocalNotice');
+  const privacyNote = t(photoPrivacyMessageKey(state.lastConcept, clientConfig.aiMode, clientConfig.quoteMode));
 
   const acceptFile = async (file?: File) => {
     if (!file) return;

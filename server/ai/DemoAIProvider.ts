@@ -9,6 +9,7 @@ export class DemoAIProvider implements ServerAIProvider {
     return {
       status: 'UNAVAILABLE',
       providerId: this.id,
+      errorCode: 'AI_NOT_CONFIGURED',
       message: `${this.reason} The source storefront has not been edited.`,
     };
   }

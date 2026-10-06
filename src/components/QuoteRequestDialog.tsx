@@ -46,7 +46,7 @@ export function QuoteRequestDialog({ open, onClose }: QuoteRequestDialogProps) {
     const currentConcept = state.lastConcept;
     const quoteConfiguration = {
       ...state.configuration,
-      exactText: state.configuration.exactText.trim() || state.configuration.businessName.trim(),
+      exactText: state.configuration.exactText.trim() ? state.configuration.exactText : state.configuration.businessName.trim(),
     };
     const request: QuoteRequest = {
       id: createRequestId(),
@@ -70,7 +70,6 @@ export function QuoteRequestDialog({ open, onClose }: QuoteRequestDialogProps) {
         status: currentConcept.status,
         providerId: currentConcept.providerId,
         sourceImageTransfer: currentConcept.sourceImageTransfer,
-        ...(currentConcept.status === 'GENERATED' ? { imageUrl: currentConcept.imageUrl } : {}),
         createdAt: currentConcept.createdAt,
         ...(currentConcept.status !== 'GENERATED' ? { message: currentConcept.message } : {}),
       } : { status: 'NOT_GENERATED', providerId: 'none' },
