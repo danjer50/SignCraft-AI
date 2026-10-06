@@ -16,9 +16,45 @@ import { StudioPage } from './pages/StudioPage';
 const ProfessionalPage = lazy(() => import('./pages/ProfessionalPage').then((module) => ({ default: module.ProfessionalPage })));
 const AdminPage = lazy(() => import('./pages/AdminPage').then((module) => ({ default: module.AdminPage })));
 
+/**
+ * Cached probe: `behavior: 'instant'` is a valid `ScrollBehavior` only since Safari 15.4, and
+ * older engines throw a `TypeError` on an unknown enum value instead of ignoring it.
+ * `null` = not probed yet, `true`/`false` = the options form works / must not be used again.
+ */
+let instantScrollSupported: boolean | null = null;
+
+/**
+ * Scroll restoration for route changes. It runs *outside* the page-level error boundary, so a
+ * browser or an embedded frame that refuses `window.scrollTo` must never be able to unmount the
+ * whole app into the boot crash screen: every step degrades to the next, then to nothing.
+ */
+function scrollToShowTop(): void {
+  if (instantScrollSupported !== false) {
+    try {
+      window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+      instantScrollSupported = true;
+      return;
+    } catch {
+      instantScrollSupported = false;
+    }
+  }
+  try {
+    window.scrollTo(0, 0);
+    return;
+  } catch {
+    // A sandboxed frame can block scrolling entirely; that is a cosmetic loss only.
+  }
+  try {
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+  } catch {
+    // Nothing else to try: keep the page interactive instead of reporting an error.
+  }
+}
+
 function ScrollToTop() {
   const { pathname } = useLocation();
-  useEffect(() => window.scrollTo({ top: 0, behavior: 'instant' }), [pathname]);
+  useEffect(() => { scrollToShowTop(); }, [pathname]);
   return null;
 }
 

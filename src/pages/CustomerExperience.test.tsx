@@ -11,6 +11,27 @@ import { HomePage } from './HomePage';
 import { ResultPage } from './ResultPage';
 import { StudioPage } from './StudioPage';
 import { STUDIO_DRAFT_KEY } from '../services/draftStorage';
+import { generateStorefrontConcept } from '../services/ai';
+
+/**
+ * The AI service is mocked at its boundary here: the provider contract (including the
+ * Cloudflare FLUX request/response handling) has its own tests in `src/services/ai` and
+ * `server/`. This suite verifies what the redesigned UI does with a real generated concept.
+ */
+vi.mock('../services/ai', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/ai')>();
+  return {
+    ...actual,
+    generateStorefrontConcept: vi.fn(async () => ({
+      status: 'GENERATED' as const,
+      providerId: 'cloudflare-flux-2-klein-9b',
+      imageUrl: 'data:image/png;base64,iVBORw0KGgo=',
+      createdAt: new Date().toISOString(),
+      promptVersion: 'storefront-inpaint-v3',
+      sourceImageTransfer: 'SENT_TO_SERVER' as const,
+    })),
+  };
+});
 import { SIGN_STYLES, SIGN_TYPES, DEFAULT_SIGN_CONFIGURATION } from '../domain/sign';
 
 vi.mock('../services/upload', async () => {
@@ -57,6 +78,7 @@ function renderRoutesWithQuoteDialog(initialPath: string) {
         <QuoteHost>
           <MemoryRouter initialEntries={[initialPath]}>
             <Routes>
+              <Route path="/studio" element={<StudioPage />} />
               <Route path="/result" element={<ResultPage />} />
             </Routes>
           </MemoryRouter>
@@ -163,6 +185,40 @@ describe('redesigned customer experience', () => {
     fireEvent.click(screen.getByRole('button', { name: /Laissez l’atelier décider/i }));
     expect(screen.getByRole('checkbox', { name: /Conseillez-moi/i })).not.toBeChecked();
     expect(screen.getByText('0 / 6')).toBeInTheDocument();
+  });
+
+  it('renders a real generated concept on the result stage and sends every chosen material', async () => {
+    renderRoutesWithQuoteDialog('/studio');
+    const next = () => screen.getByRole('button', { name: 'Continuer' });
+
+    const photo = new File(['front facade'], 'facade.webp', { type: 'image/webp' });
+    fireEvent.change(screen.getByLabelText('Choisir une photo'), { target: { files: [photo] } });
+    await waitFor(() => expect(screen.getByAltText('Photo sélectionnée — facade.webp')).toBeInTheDocument());
+    fireEvent.click(next());
+    fireEvent.change(await screen.findByLabelText(/^Nom de l’établissement/), { target: { value: 'Atelier Sable' } });
+    fireEvent.click(next());
+    fireEvent.click(await screen.findByRole('button', { name: /Lettres boîtiers/i }));
+    fireEvent.click(next());
+    fireEvent.click(await screen.findByRole('button', { name: 'Premium' }));
+    fireEvent.click(next());
+    fireEvent.click(await screen.findByRole('checkbox', { name: /Acrylique \(plexiglas\)/i }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /^Inox$/i }));
+
+    fireEvent.click(screen.getByRole('button', { name: /Créer mon enseigne/i }));
+    expect(await screen.findByRole('heading', { level: 1, name: 'Votre projet prend forme.' })).toBeInTheDocument();
+
+    // Both materials reach the AI request, in the customer's order.
+    expect(vi.mocked(generateStorefrontConcept)).toHaveBeenCalledWith(expect.objectContaining({
+      configuration: expect.objectContaining({ businessName: 'Atelier Sable', signType: 'channelLetters', style: 'premium', materials: ['acrylic', 'stainlessSteel'] }),
+    }));
+
+    // The generated image is the star: it is on the result stage, next to the customer's photo.
+    const stage = document.querySelector('.result-stage');
+    expect(stage).not.toBeNull();
+    const sources = Array.from((stage as HTMLElement).querySelectorAll('img')).map((img) => img.getAttribute('src'));
+    expect(sources).toContain('data:image/png;base64,iVBORw0KGgo=');
+    expect(sources).toContain('data:image/jpeg;base64,dGh1bWI=');
+    expect(screen.queryByText('Aucun rendu IA n’a été créé.')).not.toBeInTheDocument();
   });
 
   it('walks the whole customer journey and ends in an open quote request', async () => {

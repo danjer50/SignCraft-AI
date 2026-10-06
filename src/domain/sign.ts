@@ -100,8 +100,10 @@ export function isSignMaterial(value: unknown): value is SignMaterial {
  * Coerce an unknown value (local draft, API payload, old project) into a safe material
  * list: valid values only, de-duplicated, original order preserved, capped.
  */
-export function normalizeMaterials(value: unknown): SignMaterial[] {
-  if (!Array.isArray(value)) return [];
+export function normalizeMaterials(value: unknown, legacySingle?: unknown): SignMaterial[] {
+  // Drafts saved before multi-material support stored one `material` string; migrate it so a
+  // returning customer does not lose the choice they already made.
+  if (!Array.isArray(value)) return isSignMaterial(legacySingle) ? [legacySingle] : [];
   const selected: SignMaterial[] = [];
   for (const entry of value) {
     if (!isSignMaterial(entry) || selected.includes(entry)) continue;
@@ -125,14 +127,17 @@ function pickString(value: unknown, maximum: number): string {
  * the documented defaults instead of rendering `undefined`.
  */
 export function normalizeSignConfiguration(value: unknown): SignConfiguration {
-  const source = (typeof value === 'object' && value !== null ? value : {}) as Partial<Record<keyof SignConfiguration, unknown>>;
+  // `material` (singular) is not part of the current type: it only exists in drafts persisted
+  // by older builds, hence the wider record type for the lookup below.
+  const source = (typeof value === 'object' && value !== null ? value : {}) as
+    Partial<Record<keyof SignConfiguration, unknown>> & { material?: unknown };
   const businessName = pickString(source.businessName, 120);
   return {
     businessName,
     category: pickEnum(source.category, BUSINESS_CATEGORIES, DEFAULT_SIGN_CONFIGURATION.category),
     signType: pickEnum(source.signType, SIGN_TYPES, DEFAULT_SIGN_CONFIGURATION.signType),
     style: pickEnum(source.style, SIGN_STYLES, DEFAULT_SIGN_CONFIGURATION.style),
-    materials: normalizeMaterials(source.materials),
+    materials: normalizeMaterials(source.materials, source.material),
     color: typeof source.color === 'string' && /^#[0-9a-fA-F]{6}$/.test(source.color)
       ? source.color
       : DEFAULT_SIGN_CONFIGURATION.color,

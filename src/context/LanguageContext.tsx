@@ -40,9 +40,16 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
   const direction: 'ltr' | 'rtl' = locale === 'ar' ? 'rtl' : 'ltr';
 
   useEffect(() => {
-    document.documentElement.lang = locale;
-    document.documentElement.dir = direction;
-    document.body.dir = direction;
+    // Boot-level side effects: this provider sits outside the page error boundary, so a
+    // document that refuses to be mutated (frozen node, sandboxed frame, missing body) must
+    // degrade silently instead of unmounting the app into the boot crash screen.
+    try {
+      document.documentElement.lang = locale;
+      document.documentElement.dir = direction;
+      if (document.body) document.body.dir = direction;
+    } catch {
+      // The visible language still switches; only the document metadata is skipped.
+    }
     try {
       localStorage.setItem(STORAGE_KEY, locale);
     } catch {
@@ -77,7 +84,11 @@ export function useSafeLanguage(): LanguageContextValue {
     } catch {
       // Without a provider the next full page load picks the value up.
     }
-    window.location.reload();
+    try {
+      window.location.reload();
+    } catch {
+      // A frame that blocks reloading simply keeps the current document.
+    }
   }, []);
   const t = useMemo(() => translateWith(locale), [locale]);
   return context ?? { locale, direction, setLocale, t };
