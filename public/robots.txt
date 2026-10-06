@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+# Set SITE_URL during build to emit a production sitemap.xml.

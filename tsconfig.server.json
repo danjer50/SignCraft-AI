@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "composite": true,
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "moduleResolution": "Bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "types": ["node"]
+  },
+  "include": [
+    "server/**/*.ts",
+    "api/**/*.ts",
+    "functions/**/*.ts",
+    "src/domain/sign.ts",
+    "src/services/upload.ts",
+    "src/services/ai/contracts.ts",
+    "src/services/ai/promptBuilder.ts"
+  ]
+}
