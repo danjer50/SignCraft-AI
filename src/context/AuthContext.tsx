@@ -4,9 +4,32 @@ import {
   fetchSessionSnapshot,
   requestSignIn,
   requestSignOut,
+  type SessionSnapshot,
   type SessionStatus,
   type SignInOutcome,
 } from '../services/auth/authClient';
+
+const UNAVAILABLE_SESSION: SessionSnapshot = {
+  status: 'unavailable',
+  session: null,
+  failure: {
+    code: 'AUTH_NOT_CONFIGURED',
+    message: 'The authentication service did not answer.',
+  },
+};
+
+/**
+ * The auth client promises typed failures, but this provider is also the application's final
+ * async boundary. Keep a rejected mock, browser extension, or future transport implementation
+ * from becoming an unhandled rejection that can leave guarded routes loading forever.
+ */
+async function readSessionSafely(): Promise<SessionSnapshot> {
+  try {
+    return await fetchSessionSnapshot();
+  } catch {
+    return UNAVAILABLE_SESSION;
+  }
+}
 
 /**
  * Session state for the whole app.
@@ -41,16 +64,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refresh = useCallback(async () => {
     setState((current) => ({ ...current, loading: true }));
-    const snapshot = await fetchSessionSnapshot();
+    const snapshot = await readSessionSafely();
     setState({ loading: false, ...snapshot });
   }, []);
 
   useEffect(() => {
     let cancelled = false;
-    void (async () => {
-      const snapshot = await fetchSessionSnapshot();
+    void readSessionSafely().then((snapshot) => {
       if (!cancelled) setState({ loading: false, ...snapshot });
-    })();
+    });
     return () => { cancelled = true; };
   }, []);
 
