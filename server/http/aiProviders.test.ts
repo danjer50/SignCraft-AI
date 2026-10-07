@@ -81,7 +81,7 @@ describe('multi-provider AI generation through the API handler', () => {
       expect(body.status).toBe('GENERATED');
       expect(body.providerId).toBe('gemini');
       expect(body.imageUrl).toMatch(/^data:image\/png;base64,/);
-      expect(body.promptVersion).toBe('storefront-inpaint-v5');
+      expect(body.promptVersion).toBe('storefront-inpaint-v6');
     } finally {
       vi.unstubAllGlobals();
     }
@@ -116,7 +116,7 @@ describe('multi-provider AI generation through the API handler', () => {
     try {
       const response = await handleAiGeneration(makeRequest(), { GEMINI_API_KEY: GEMINI_KEY, OPENROUTER_API_KEY: OPENROUTER_KEY });
       expect(response.status).toBe(200);
-      expect(await response.json()).toMatchObject({ status: 'GENERATED', providerId: 'openrouter', promptVersion: 'storefront-inpaint-v5' });
+      expect(await response.json()).toMatchObject({ status: 'GENERATED', providerId: 'openrouter', promptVersion: 'storefront-inpaint-v6' });
       expect(fetchMock).toHaveBeenCalledTimes(2);
     } finally {
       vi.unstubAllGlobals();

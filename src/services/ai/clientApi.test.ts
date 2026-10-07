@@ -10,10 +10,13 @@ vi.mock('./imagePreparation', () => ({
   prepareCloudflareReferenceImage: vi.fn(async () => new File(['prepared'], 'storefront.jpg', { type: 'image/jpeg' })),
 }));
 
-vi.mock('./renderComparison', () => ({ isUnchangedRender: vi.fn(async () => false) }));
+vi.mock('./renderComparison', () => ({
+  isUnchangedRender: vi.fn(async () => false),
+  isOverEditedRender: vi.fn(async () => false),
+}));
 
 import { AI_REQUEST_TIMEOUT_MS, generateStorefrontConcept } from './client';
-import { isUnchangedRender } from './renderComparison';
+import { isOverEditedRender, isUnchangedRender } from './renderComparison';
 import { prepareCloudflareReferenceImage } from './imagePreparation';
 
 const configuration = {
@@ -71,6 +74,27 @@ describe('AI client failure recovery in API mode', () => {
     expect(isUnchangedRender).toHaveBeenCalledWith(await vi.mocked(prepareCloudflareReferenceImage).mock.results[0].value, imageUrl);
     // Do not spend another generation request on a browser-side rejection.
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects a result that redraws the scene instead of making a localized sign edit', async () => {
+    const imageUrl = 'data:image/png;base64,iVBORw0KGgo=';
+    mockFetch(async () => jsonResponse({ status: 'GENERATED', providerId: 'cloudflare-flux-2-klein-9b', imageUrl }));
+    vi.mocked(isOverEditedRender).mockResolvedValueOnce(true);
+
+    const result = await generateStorefrontConcept({ sourceImage, configuration });
+
+    expect(result).toMatchObject({
+      status: 'ERROR',
+      errorCode: 'AI_INVALID_RESPONSE',
+      providerId: 'cloudflare-flux-2-klein-9b',
+      sourceImageTransfer: 'SENT_TO_SERVER',
+    });
+    expect(result).not.toHaveProperty('imageUrl');
+    expect(isOverEditedRender).toHaveBeenCalledWith(
+      await vi.mocked(prepareCloudflareReferenceImage).mock.results[0].value,
+      imageUrl,
+      configuration.signArea,
+    );
   });
 
   it('preserves the server unchanged-image error and never invents a render', async () => {
