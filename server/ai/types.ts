@@ -19,7 +19,7 @@ export interface AIEnvironment {
   CLOUDFLARE_ACCOUNT_ID?: string;
   CLOUDFLARE_API_TOKEN?: string;
 
-  /** Ordered, comma-separated provider ids. Defaults to `groq,gemini,openrouter`. */
+  /** Ordered, comma-separated provider ids; other configured providers remain fallbacks. */
   AI_PROVIDER_ORDER?: string;
   /** Per-provider request timeout in milliseconds. */
   AI_PROVIDER_TIMEOUT_MS?: string;

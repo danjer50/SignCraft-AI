@@ -157,14 +157,14 @@ Copy `.env.example` and configure only what you need:
 | `VITE_SITE_URL` | Browser build | empty | Adds canonical/Open Graph URLs when configured. |
 | `VITE_WHATSAPP_NUMBER` | Browser build | empty | Public contact number in international digits, without `+` or spaces, for `https://wa.me/<number>`. Do not put a private API key here. |
 | `SITE_URL` | Build process | empty | When set to an absolute HTTPS URL, generates `dist/sitemap.xml`. |
-| `AI_PROVIDER_ORDER` | **Server only** | `groq,gemini,openrouter,cloudflare-flux` | Comma-separated fallback order. Each provider is tried at most once, in this order, and never in parallel. Cloudflare Workers AI closes the default chain so a deployment that already has `CLOUDFLARE_ACCOUNT_ID` + `CLOUDFLARE_API_TOKEN` keeps working without any extra variable; it is skipped silently when unconfigured, and setting this variable replaces the default order entirely. |
+| `AI_PROVIDER_ORDER` | **Server only** | `groq,gemini,openrouter,cloudflare-flux,pollinations` | Comma-separated fallback priority. Each provider is tried at most once and never in parallel. Configured providers omitted by an older saved order are appended as fallbacks, while entries without credentials are skipped silently. |
 | `GROQ_API_KEY` | **Server secret** | empty | Groq API key. Groq serves text models only, so it is skipped for sign generation (no image models) and is ready for future text features. |
 | `GROQ_MODEL` | **Server only** | `openai/gpt-oss-120b` | Groq model id. |
 | `GEMINI_API_KEY` | **Server secret** | empty | Google Gemini API key ([Google AI Studio](https://aistudio.google.com/apikey)). |
 | `GEMINI_MODEL` | **Server only** | `gemini-3.1-flash-image` | Gemini image model. Change it when Google renames or retires a model; `gemini-3.1-flash-lite-image` is the cheaper option and `gemini-3-pro-image` the higher-quality one. |
 | `OPENROUTER_API_KEY` | **Server secret** | empty | OpenRouter API key. |
 | `OPENROUTER_MODEL` | **Server only** | `google/gemini-3.1-flash-image` | Must be an OpenRouter model that accepts image input and returns image output. |
-| `POLLINATIONS_API_KEY` | **Server secret** | empty | Pollinations secret key (`sk_…`), backend-only. **Opt-in:** nothing is sent to Pollinations unless it is named in `AI_PROVIDER_ORDER` or pinned with `AI_PROVIDER=pollinations`. |
+| `POLLINATIONS_API_KEY` | **Server secret** | empty | Pollinations secret key (`sk_…`), backend-only. When present, Pollinations joins the image fallback chain; when absent, no Pollinations request is made. |
 | `POLLINATIONS_MODEL` | **Server only** | `black-forest-labs/flux.1-kontext-pro` | Must accept image input; the endpoint's own default is a text-to-image model that would ignore the source photo, so an edit-capable model is always sent explicitly. |
 | `AI_PROVIDER_TIMEOUT_MS` | **Server only** | `90000` | Maximum time for one provider attempt. |
 | `AI_TOTAL_TIMEOUT_MS` | **Server only** | `110000` | Maximum time for the whole chain. Keep it below the browser's 120 s abort. |
@@ -198,9 +198,7 @@ The client-side contract lives in `src/services/ai/contracts.ts`. Server adapter
 | Cloudflare Workers AI | `cloudflare-flux` | storefront image editing | fixed: `@cf/black-forest-labs/flux-2-klein-9b` |
 | Pollinations | `pollinations` | storefront image editing | `POLLINATIONS_MODEL` |
 
-**A provider joins the chain as soon as its key is present; you do not need all of them.** With only `GEMINI_API_KEY` set, Gemini serves every generation. Add `OPENROUTER_API_KEY` and OpenRouter becomes the fallback.
-
-**Pollinations is opt-in.** It is not in the default order, so adding it changed no existing deployment: it is used only when you name it in `AI_PROVIDER_ORDER` (for example `pollinations,gemini,openrouter`) or pin it with `AI_PROVIDER=pollinations`. With no `POLLINATIONS_API_KEY` it is skipped and no request is made.
+**A provider joins the chain as soon as its key is present; you do not need all of them.** With only `GEMINI_API_KEY` set, Gemini serves every generation. With only `POLLINATIONS_API_KEY` set, Pollinations serves it. `AI_PROVIDER_ORDER` controls priority rather than acting as an allowlist: a configured provider omitted by an older saved order is appended as a fallback. Providers without credentials are skipped without a request.
 
 ### How the fallback works
 
@@ -214,7 +212,7 @@ The client-side contract lives in `src/services/ai/contracts.ts`. Server adapter
 
 ### An unchanged photo is not an AI concept
 
-Every image adapter (Gemini, OpenRouter, Cloudflare and opt-in Pollinations) compares the decoded output bytes with the **exact prepared photo bytes sent to that provider**. A byte-identical echo is skipped when the same response contains a later edited image; otherwise the adapter reports `AI_UNCHANGED_IMAGE`, and the existing router falls through to the next provider without changing priority or budgets. Gemini ignores `thought: true` image parts: intermediate reasoning is never displayed as the customer's final concept. Existing MIME/signature, base64 and size validation stays in place.
+Every image adapter (Gemini, OpenRouter, Cloudflare and Pollinations) compares the decoded output bytes with the **exact prepared photo bytes sent to that provider**. A byte-identical echo is skipped when the same response contains a later edited image; otherwise the adapter reports `AI_UNCHANGED_IMAGE`, and the existing router falls through to the next provider without changing priority or budgets. Gemini ignores `thought: true` image parts: intermediate reasoning is never displayed as the customer's final concept. Existing MIME/signature, base64 and size validation stays in place.
 
 Before the browser accepts `GENERATED`, `src/services/ai/renderComparison.ts` also compares locally decoded 96 × 96 pixel grids of the prepared photo and result. This catches visually identical and lightly re-encoded copies that have different file bytes. The comparison is deliberately conservative about local changes and fails open on unsupported decoding, unavailable canvas, pixel-read errors or its bounded watchdog; it is an additional guard, not proof of edit quality. It makes no network request and does not spend another generation request when it rejects a copy. An unchanged-image failure has no AI image or green generated badge, and French, English and Arabic messages explicitly say that no concept was created.
 
@@ -235,12 +233,12 @@ For a production diagnosis, retry **one** generation after deployment and inspec
 
 ### Configure the providers
 
-1. Add the server keys for the providers you want (at minimum one image provider: Gemini, OpenRouter or Cloudflare Workers AI). Optionally set `AI_PROVIDER_ORDER` to change the order; the default order already ends with Cloudflare.
+1. Add the server keys for the providers you want (at minimum one image provider: Gemini, OpenRouter, Cloudflare Workers AI or Pollinations). Optionally set `AI_PROVIDER_ORDER` to change priority; configured providers omitted by that value remain available as fallbacks.
 2. Redeploy so the server environment is active. The browser calls `/api/ai/generate-sign` by default, so **no public build flag is required**; set `VITE_AI_MODE=demo` only if you deliberately want the offline demonstration build. For local secrets, `.env` is git-ignored; `npm run dev` now also serves `/api/ai/generate-sign` through the same shared handler, so the real chain can be exercised locally.
 
 Google Gemini is called at the fixed `generativelanguage.googleapis.com` host with the key in the `x-goog-api-key` header; the source photo travels as `inline_data` base64 and the edited image is read back from `candidates[0].content.parts[].inlineData`. OpenRouter is called at the fixed `openrouter.ai/api/v1/chat/completions` host with `modalities: ["text","image"]`; the photo is attached as a base64 `image_url` and the edited image is read from `choices[0].message.images[]`. Both adapters validate the returned bytes' image signature before anything is returned to the browser, and both hosts are constants, so request data cannot become an arbitrary URL.
 
-### Pollinations (opt-in image provider)
+### Pollinations image provider
 
 `server/ai/providers/pollinations.ts` posts `multipart/form-data` to the fixed endpoint `https://gen.pollinations.ai/v1/images/edits`, sending the resized storefront photo as the `image` part (filename `storefront.jpg`), the existing SignCraft prompt, an edit-capable `model` and `response_format=b64_json`. The edited image is read from `data[0].b64_json` and its magic bytes are validated before it reaches the browser. A URL-only result is deliberately **not** fetched: following a provider-supplied URL would let a response steer the server at an arbitrary host.
 
@@ -289,7 +287,7 @@ Cloudflare references: [FLUX.2 Klein 9B model schema](https://developers.cloudfl
 - `/api/ai/generate-sign` (and the backwards-compatible `/api/ai/generate`) plus `/api/quotes` are Vercel Node function entry points under `api/`; a bounded request adapter converts multipart bodies to the shared Fetch handlers. The AI client uploads only its resized/compressed copy. Keep platform payload limits in mind and use signed object-storage uploads if quote uploads approach platform limits.
 - The SPA rewrite is in `vercel.json`.
 - Add server secrets in Vercel’s project environment settings, not in client variables.
-- **Exact Vercel environment variables.** Required for sign generation: at least one of `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, `POLLINATIONS_API_KEY` (with `AI_PROVIDER_ORDER` naming `pollinations`) or the `CLOUDFLARE_ACCOUNT_ID` + `CLOUDFLARE_API_TOKEN` pair. Optional: `VITE_AI_MODE=demo` (build-time, public) only for an offline demonstration build, `AI_PROVIDER_ORDER` (default `groq,gemini,openrouter,cloudflare-flux`), `GEMINI_MODEL`, `OPENROUTER_MODEL`, `POLLINATIONS_MODEL`, `GROQ_API_KEY` + `GROQ_MODEL` (text models only), `AI_PROVIDER_TIMEOUT_MS`, `AI_TOTAL_TIMEOUT_MS`, and the legacy `AI_PROVIDER` pin. All AI keys are server-side: never prefix one with `VITE_`.
+- **Exact Vercel environment variables.** Required for sign generation: at least one of `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, `POLLINATIONS_API_KEY` or the `CLOUDFLARE_ACCOUNT_ID` + `CLOUDFLARE_API_TOKEN` pair. Optional: `VITE_AI_MODE=demo` (build-time, public) only for an offline demonstration build, `AI_PROVIDER_ORDER` (default `groq,gemini,openrouter,cloudflare-flux,pollinations`), `GEMINI_MODEL`, `OPENROUTER_MODEL`, `POLLINATIONS_MODEL`, `GROQ_API_KEY` + `GROQ_MODEL` (text models only), `AI_PROVIDER_TIMEOUT_MS`, `AI_TOTAL_TIMEOUT_MS`, and the legacy `AI_PROVIDER` pin. All AI keys are server-side: never prefix one with `VITE_`.
 - A chain can outlive a very short function limit. If your plan caps function duration below `AI_TOTAL_TIMEOUT_MS`, lower `AI_PROVIDER_TIMEOUT_MS` and `AI_TOTAL_TIMEOUT_MS` to fit.
 
 ### Cloudflare Pages
@@ -319,7 +317,7 @@ The test suite covers prompt realism and exact-text data, multi-material prompt 
 
 It also covers the multi-provider layer with mocked provider responses only (no real API call is ever made): fallback order resolution and `AI_PROVIDER` pinning, Groq being skipped for image tasks because it has no image models, fallback on rate limit / quota / authentication failure / outage / unusable payload, missing-key skipping without a wasted request, the all-providers-failed message, the per-chain timeout budget, the exact request shape sent to each provider host, and the guarantee that no provider key can appear in a response body or an error message.
 
-Pollinations specifically is covered by mocked tests for the multipart upload to `/v1/images/edits` (photo bytes, filename and MIME type, prompt, `response_format=b64_json`, bearer header and no manually set content type), the always-edit-capable model, `POLLINATIONS_MODEL` overrides, 401/402/403/422/429/5xx mapping, rejection of non-image and URL-only payloads without a second request, timeouts, key non-leakage, opt-in chain resolution, fallback into and out of it, and that a missing key costs no network call.
+Pollinations specifically is covered by mocked tests for the multipart upload to `/v1/images/edits` (photo bytes, filename and MIME type, prompt, `response_format=b64_json`, bearer header and no manually set content type), the always-edit-capable model, `POLLINATIONS_MODEL` overrides, 401/402/403/422/429/5xx mapping, rejection of non-image and URL-only payloads without a second request, timeouts, key non-leakage, automatic chain resolution, fallback into and out of it, and that a missing key costs no network call.
 
 Unchanged-image regression tests mock all provider calls: exact echoes on all four image adapters, echo followed by a real edit, Gemini thought-only/echo/thought/final response selection, fallback and all-echo failure, HTTP error mapping, the 96 × 96 pixel guard (encoding noise versus local edits), fail-open decoding/canvas/watchdog cleanup, client rejection before storing `GENERATED`, and the absence of a generated badge or AI image for the localized failure in all three languages.
 
