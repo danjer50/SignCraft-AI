@@ -205,12 +205,33 @@ The client-side contract lives in `src/services/ai/contracts.ts`. Server adapter
 ### How the fallback works
 
 - Providers are tried **sequentially**, in `AI_PROVIDER_ORDER`, and each one **at most once**. A healthy first provider costs exactly one request; providers are never called in parallel.
-- The next provider is tried when the current one is rate-limited, out of quota, temporarily unavailable, unreachable, rejects its credentials, is not configured, or returns a payload that is not a real image.
+- The next provider is tried when the current one is rate-limited, out of quota, temporarily unavailable, unreachable, rejects its credentials, is not configured, returns a payload that is not a real image, or echoes the source photo unchanged (`AI_UNCHANGED_IMAGE`).
 - A provider is **never sent a task it cannot do**. Groq has no image models, so the image router skips it in one log line (`[AI] task=image-edit chain=[gemini, openrouter] skipped=[groq (unsupported)]`) without spending a request.
 - `AI_PROVIDER` still pins one provider to the front of the chain, so `AI_PROVIDER=cloudflare-flux` keeps today's behaviour and gains fallbacks.
 - Each attempt is capped by `AI_PROVIDER_TIMEOUT_MS`, and the whole chain by `AI_TOTAL_TIMEOUT_MS`; no further provider is started when the remaining budget is too small to finish.
 - If everything fails, the customer gets one clean, localized, retryable error. The message names each provider and its failure category — never a key, a stack trace or provider response text.
 - Server logs report the chain, each attempt and each failure (`[AI] trying provider: gemini (task=image-edit, model=gemini-3.1-flash-image)`, `[AI] gemini failed (AI_RATE_LIMITED)`, `[AI] falling back to openrouter`). Prompts, photos and keys are never logged.
+
+### An unchanged photo is not an AI concept
+
+Every image adapter (Gemini, OpenRouter, Cloudflare and opt-in Pollinations) compares the decoded output bytes with the **exact prepared photo bytes sent to that provider**. A byte-identical echo is skipped when the same response contains a later edited image; otherwise the adapter reports `AI_UNCHANGED_IMAGE`, and the existing router falls through to the next provider without changing priority or budgets. Gemini ignores `thought: true` image parts: intermediate reasoning is never displayed as the customer's final concept. Existing MIME/signature, base64 and size validation stays in place.
+
+Before the browser accepts `GENERATED`, `src/services/ai/renderComparison.ts` also compares locally decoded 96 × 96 pixel grids of the prepared photo and result. This catches visually identical and lightly re-encoded copies that have different file bytes. The comparison is deliberately conservative about local changes and fails open on unsupported decoding, unavailable canvas, pixel-read errors or its bounded watchdog; it is an additional guard, not proof of edit quality. It makes no network request and does not spend another generation request when it rejects a copy. An unchanged-image failure has no AI image or green generated badge, and French, English and Arabic messages explicitly say that no concept was created.
+
+The prompt now starts with **“MANDATORY EDIT”** and explicitly calls an unchanged photograph a failed answer (`storefront-inpaint-v5`). The customer's wording, placement, materials, languages and facade-preservation instructions are otherwise unchanged. Source preparation still caps both sides at **511 px**.
+
+For a production diagnosis, retry **one** generation after deployment and inspect **Vercel → project → Logs → Functions**. The existing non-secret lines identify the exact attempted provider and model, for example:
+
+```text
+[AI] task=image-edit chain=[gemini, openrouter]
+[AI] trying provider: gemini (task=image-edit, model=gemini-3.1-flash-image)
+[AI] gemini failed (AI_UNCHANGED_IMAGE)
+[AI] falling back to openrouter
+```
+
+`/admin` → **AI usage** shows the resolved chain and which providers are configured. Share only the `[AI]` routing lines, never credentials, prompts or photo payloads. If only the browser catches a re-encoded copy, the server may have logged success; include the visible no-concept message and the successful provider's attempt line as well. Mocked tests cannot establish what a production model actually changed.
+
+**Open item:** no adapter consumes the studio's binary mask yet. `ServerImageEditInput.mask` remains reserved for true mask-based inpainting; current placement is described in the prompt only. Decide separately whether to wire up a provider-supported mask.
 
 ### Configure the providers
 
@@ -244,7 +265,7 @@ The browser posts to `/api/ai/generate-sign` (the existing `/api/ai/generate` al
 
 The adapter calls Cloudflare's fixed Workers AI REST host with multipart `prompt`, output `width`/`height`, and the binary storefront reference under the required field name `input_image_0`. It does not accept user-supplied URLs, so it cannot be used for arbitrary URL fetching/SSRF. Cloudflare returns a base64 `result.image`; the adapter validates and decodes its image signature before the SignCraft API returns a `data:image/...` result. Tokens and provider error payloads are never logged or returned to the browser.
 
-`buildStorefrontEditPrompt()` (prompt version `storefront-inpaint-v3`) requests a localized change to the intended sign area and preservation of the original building, openings, street and camera perspective; it also specifies fabrication thickness, mounting, materials, color and physically plausible lighting. The selected materials are listed in the customer’s priority order and the prompt asks the model to combine several materials plausibly on one sign instead of duplicating it; when no material was chosen (or only “advise me”), it asks for one plausible material without inventing branded products. Business name, exact wording, sign type, style, materials, color, lighting, dimensions and notes remain structured `SignConfiguration` data. The prompt asks FLUX lettering to be only an approximation: the app's separate HTML typography proof remains authoritative for spelling. The model can still alter scene details or text, so review the output before quoting or manufacturing; this integration is not a fabrication approval.
+`buildStorefrontEditPrompt()` (prompt version `storefront-inpaint-v5`) requests a localized change to the intended sign area and preservation of the original building, openings, street and camera perspective; it also specifies fabrication thickness, mounting, materials, color and physically plausible lighting. The selected materials are listed in the customer’s priority order and the prompt asks the model to combine several materials plausibly on one sign instead of duplicating it; when no material was chosen (or only “advise me”), it asks for one plausible material without inventing branded products. Business name, exact wording, sign type, style, materials, color, lighting, dimensions and notes remain structured `SignConfiguration` data. The prompt asks FLUX lettering to be only an approximation: the app's separate HTML typography proof remains authoritative for spelling. The model can still alter scene details or text, so review the output before quoting or manufacturing; this integration is not a fabrication approval.
 
 Demo mode remains the zero-cost default and never calls an image service. If configuration is missing, Cloudflare rejects or limits a request, credits are unavailable, a timeout occurs, or the response is invalid, the app shows a localized retryable error and no generated image. It separately reports local-only, submitted, successfully processed and unconfirmed photo states. A failed network response is conservatively treated as unconfirmed because the server/provider may have received the image even if the browser did not receive a response.
 
@@ -299,6 +320,8 @@ The test suite covers prompt realism and exact-text data, multi-material prompt 
 It also covers the multi-provider layer with mocked provider responses only (no real API call is ever made): fallback order resolution and `AI_PROVIDER` pinning, Groq being skipped for image tasks because it has no image models, fallback on rate limit / quota / authentication failure / outage / unusable payload, missing-key skipping without a wasted request, the all-providers-failed message, the per-chain timeout budget, the exact request shape sent to each provider host, and the guarantee that no provider key can appear in a response body or an error message.
 
 Pollinations specifically is covered by mocked tests for the multipart upload to `/v1/images/edits` (photo bytes, filename and MIME type, prompt, `response_format=b64_json`, bearer header and no manually set content type), the always-edit-capable model, `POLLINATIONS_MODEL` overrides, 401/402/403/422/429/5xx mapping, rejection of non-image and URL-only payloads without a second request, timeouts, key non-leakage, opt-in chain resolution, fallback into and out of it, and that a missing key costs no network call.
+
+Unchanged-image regression tests mock all provider calls: exact echoes on all four image adapters, echo followed by a real edit, Gemini thought-only/echo/thought/final response selection, fallback and all-echo failure, HTTP error mapping, the 96 × 96 pixel guard (encoding noise versus local edits), fail-open decoding/canvas/watchdog cleanup, client rejection before storing `GENERATED`, and the absence of a generated badge or AI image for the localized failure in all three languages.
 
 It also covers the UX guarantees added to the customer flow: the five-step order and per-step validation rules, multi-material selection with the six-material cap and priority order, draft recovery from corrupted, legacy or tampered local storage, error-boundary rendering/retry/root fallback, and routing resilience — every route (home, studio steps, result, professional, admin, unknown) must render visible content instead of a blank screen. Mocked provider tests are not a live account test.
 

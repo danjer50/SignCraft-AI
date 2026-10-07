@@ -65,6 +65,33 @@ describe('OpenRouter image provider', () => {
     if (result.status === 'GENERATED') expect(result.imageUrl).toBe(pngDataUrl);
   });
 
+  it('rejects an echoed source photo instead of returning a fake concept', async () => {
+    const input = makeInput();
+    const echo = `data:image/jpeg;base64,${Buffer.from(input.image.bytes).toString('base64')}`;
+    const fetchMock = vi.fn<typeof fetch>(async () => imagesResponse(echo));
+    const result = await new OpenRouterImageProvider(env, { fetchImpl: fetchMock }).generate(input);
+
+    expect(result).toMatchObject({ status: 'ERROR', errorCode: 'AI_UNCHANGED_IMAGE' });
+    expect(result).not.toHaveProperty('imageUrl');
+    expect(JSON.stringify(result)).not.toContain(apiKey);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('skips an echo when a later image contains the edit', async () => {
+    const input = makeInput();
+    const echo = `data:image/jpeg;base64,${Buffer.from(input.image.bytes).toString('base64')}`;
+    const edit = `data:image/png;base64,${Buffer.from(tinyPng()).toString('base64')}`;
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({
+      choices: [{ message: { images: [
+        { image_url: { url: echo } }, { image_url: { url: edit } },
+      ] } }],
+    }), { status: 200 }));
+    const result = await new OpenRouterImageProvider(env, { fetchImpl: fetchMock }).generate(input);
+
+    expect(result).toMatchObject({ status: 'GENERATED', imageUrl: edit });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it('honours OPENROUTER_MODEL', async () => {
     const fetchMock = vi.fn<typeof fetch>(async () => imagesResponse(`data:image/png;base64,${Buffer.from(tinyPng()).toString('base64')}`));
     await new OpenRouterImageProvider({ ...env, OPENROUTER_MODEL: 'google/gemini-3-pro-image' }, { fetchImpl: fetchMock }).generate(makeInput());

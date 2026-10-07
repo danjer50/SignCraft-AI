@@ -148,6 +148,7 @@ function failureCategory(errorCode: AIErrorCode): string {
     case 'AI_TIMEOUT': return 'timed out';
     case 'AI_PROVIDER_UNAVAILABLE': return 'temporarily unavailable';
     case 'AI_INVALID_RESPONSE': return 'invalid response';
+    case 'AI_UNCHANGED_IMAGE': return 'unchanged source image';
     case 'AI_IMAGE_PREPARATION': return 'image preparation failed';
     case 'AI_NETWORK_ERROR': return 'network error';
     case 'AI_REQUEST_REJECTED': return 'request rejected';
@@ -166,6 +167,7 @@ const TRANSIENT_FIRST: readonly AIErrorCode[] = [
   'AI_PROVIDER_UNAVAILABLE',
   'AI_NETWORK_ERROR',
   'AI_AUTHENTICATION',
+  'AI_UNCHANGED_IMAGE',
   'AI_INVALID_RESPONSE',
   'AI_REQUEST_REJECTED',
   'AI_IMAGE_PREPARATION',

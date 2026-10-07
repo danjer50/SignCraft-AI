@@ -91,6 +91,29 @@ describe('Pollinations image-edit provider', () => {
     }
   });
 
+  it('rejects an echoed source photo instead of returning a fake concept', async () => {
+    const input = makeInput();
+    const fetchMock = vi.fn<typeof fetch>(async () => b64Response(input.image.bytes));
+    const result = await new PollinationsImageProvider(env, { fetchImpl: fetchMock }).generate(input);
+
+    expect(result).toMatchObject({ status: 'ERROR', errorCode: 'AI_UNCHANGED_IMAGE' });
+    expect(result).not.toHaveProperty('imageUrl');
+    expect(JSON.stringify(result)).not.toContain(apiKey);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('skips an echoed photo and uses a later edited image from the same response', async () => {
+    const input = makeInput();
+    const edit = Buffer.from(tinyPng()).toString('base64');
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ data: [
+      { b64_json: Buffer.from(input.image.bytes).toString('base64') }, { b64_json: edit },
+    ] }), { status: 200 }));
+    const result = await new PollinationsImageProvider(env, { fetchImpl: fetchMock }).generate(input);
+
+    expect(result).toMatchObject({ status: 'GENERATED', imageUrl: `data:image/png;base64,${edit}` });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it('always sends an edit-capable model, never the text-to-image endpoint default', async () => {
     const fetchMock = vi.fn<typeof fetch>(async () => b64Response());
     await new PollinationsImageProvider(env, { fetchImpl: fetchMock }).generate(makeInput());

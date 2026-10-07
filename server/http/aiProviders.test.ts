@@ -81,7 +81,43 @@ describe('multi-provider AI generation through the API handler', () => {
       expect(body.status).toBe('GENERATED');
       expect(body.providerId).toBe('gemini');
       expect(body.imageUrl).toMatch(/^data:image\/png;base64,/);
-      expect(body.promptVersion).toBe('storefront-inpaint-v4');
+      expect(body.promptVersion).toBe('storefront-inpaint-v5');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('returns HTTP 502 and the honest error code when the only provider echoes the photo', async () => {
+    const sourceBase64 = Buffer.from(jpegFixture()).toString('base64');
+    vi.stubGlobal('fetch', scriptedFetch({ gemini: () => new Response(JSON.stringify({
+      candidates: [{ content: { parts: [{ inlineData: { mimeType: 'image/jpeg', data: sourceBase64 } }] } }],
+    }), { status: 200 }) }));
+    try {
+      const response = await handleAiGeneration(makeRequest(), { GEMINI_API_KEY: GEMINI_KEY });
+      const body = await response.json();
+      expect(response.status).toBe(502);
+      expect(body).toMatchObject({ status: 'ERROR', code: 'AI_UNCHANGED_IMAGE', providerId: 'gemini' });
+      expect(body).not.toHaveProperty('imageUrl');
+      expect(JSON.stringify(body)).not.toContain(GEMINI_KEY);
+      expect(JSON.stringify(body)).not.toContain(sourceBase64);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('returns a real fallback edit through the HTTP handler after Gemini echoes the source', async () => {
+    const fetchMock = scriptedFetch({
+      gemini: () => new Response(JSON.stringify({ candidates: [{ content: { parts: [{
+        inlineData: { mimeType: 'image/jpeg', data: Buffer.from(jpegFixture()).toString('base64') },
+      }] } }] }), { status: 200 }),
+      openrouter: openRouterOk,
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      const response = await handleAiGeneration(makeRequest(), { GEMINI_API_KEY: GEMINI_KEY, OPENROUTER_API_KEY: OPENROUTER_KEY });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({ status: 'GENERATED', providerId: 'openrouter', promptVersion: 'storefront-inpaint-v5' });
+      expect(fetchMock).toHaveBeenCalledTimes(2);
     } finally {
       vi.unstubAllGlobals();
     }

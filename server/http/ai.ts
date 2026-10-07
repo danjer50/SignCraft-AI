@@ -34,6 +34,7 @@ function providerFailureStatus(result: Exclude<ServerAIResult, { status: 'GENERA
     case 'AI_TIMEOUT': return 504;
     case 'AI_REQUEST_REJECTED': return 422;
     case 'AI_AUTHENTICATION':
+    case 'AI_UNCHANGED_IMAGE':
     case 'AI_INVALID_RESPONSE': return 502;
     case 'AI_NOT_CONFIGURED':
     case 'AI_CREDITS_EXHAUSTED':

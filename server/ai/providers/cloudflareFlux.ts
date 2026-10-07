@@ -1,5 +1,6 @@
 import type { AIErrorCode } from '../../../src/domain/sign.js';
 import { hasValidImageSignature } from '../../http/imageValidation.js';
+import { isUnchangedSource } from '../imageResult.js';
 import type { AIEnvironment, ServerAIImageProvider, ServerAIResult, ServerImageEditInput } from '../types.js';
 
 export const CLOUDFLARE_FLUX_MODEL = '@cf/black-forest-labs/flux-2-klein-9b';
@@ -23,6 +24,7 @@ function errorMessage(errorCode: AIErrorCode): string {
     case 'AI_TIMEOUT': return 'The image service took too long to respond. No result was confirmed; please retry.';
     case 'AI_PROVIDER_UNAVAILABLE': return 'Cloudflare Workers AI is temporarily unavailable. Please retry.';
     case 'AI_INVALID_RESPONSE': return 'The image service did not return a usable image. No concept was created.';
+    case 'AI_UNCHANGED_IMAGE': return 'The image service returned the source photo unchanged. No concept was created.';
     case 'AI_IMAGE_PREPARATION': return 'The storefront image could not be prepared. Your original photo remains unchanged.';
     case 'AI_NETWORK_ERROR': return 'The secure image service could not be reached. Photo receipt is unconfirmed.';
     case 'AI_REQUEST_REJECTED': return 'The image service rejected this request. Review the sign details and retry.';
@@ -130,6 +132,7 @@ export class CloudflareFluxProvider implements ServerAIImageProvider {
       if (typeof base64Image !== 'string') return failure('AI_INVALID_RESPONSE', this.id);
       const decoded = decodeImage(base64Image);
       if (!decoded) return failure('AI_INVALID_RESPONSE', this.id);
+      if (isUnchangedSource(decoded, input.image.bytes)) return failure('AI_UNCHANGED_IMAGE', this.id);
       return {
         status: 'GENERATED',
         providerId: this.id,

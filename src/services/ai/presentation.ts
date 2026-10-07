@@ -8,6 +8,7 @@ const errorMessageKeys: Record<AIErrorCode, string> = {
   AI_TIMEOUT: 'ai.errorTimeout',
   AI_PROVIDER_UNAVAILABLE: 'ai.errorUnavailable',
   AI_INVALID_RESPONSE: 'ai.errorInvalidResponse',
+  AI_UNCHANGED_IMAGE: 'ai.errorUnchangedImage',
   AI_IMAGE_PREPARATION: 'ai.errorImagePreparation',
   AI_NETWORK_ERROR: 'ai.errorNetwork',
   AI_REQUEST_REJECTED: 'ai.errorRequestRejected',

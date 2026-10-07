@@ -24,6 +24,16 @@ export function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
+/**
+ * Reject a provider echo using the exact bytes uploaded to that provider, not the base64 spelling
+ * or the customer's original (pre-resize) file. This works on both Node and Workers without an
+ * image-decoding dependency. Re-encoded copies need the browser's separate pixel comparison.
+ */
+export function isUnchangedSource(image: DecodedProviderImage, sourceBytes: Uint8Array): boolean {
+  return image.bytes.length === sourceBytes.length
+    && image.bytes.every((byte, index) => byte === sourceBytes[index]);
+}
+
 function mimeTypeFromSignature(bytes: Uint8Array): string | null {
   const header = bytes.subarray(0, 12);
   return OUTPUT_IMAGE_TYPES.find((candidate) => hasValidImageSignature(candidate, header)) ?? null;
