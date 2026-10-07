@@ -6,10 +6,13 @@ import { useLanguage } from '../context/LanguageContext';
 interface BeforeAfterComparisonProps {
   beforeImage?: string;
   afterImage?: string;
+  /** Explanation shown in the empty "after" slot; the result page passes the mode-aware wording. */
+  unavailableMessage?: string;
 }
 
-export function BeforeAfterComparison({ beforeImage, afterImage }: BeforeAfterComparisonProps) {
+export function BeforeAfterComparison({ beforeImage, afterImage, unavailableMessage }: BeforeAfterComparisonProps) {
   const { t } = useLanguage();
+  const emptyAfterMessage = unavailableMessage ?? t('result.unavailableBody');
 
   if (!afterImage) {
     return (
@@ -24,7 +27,7 @@ export function BeforeAfterComparison({ beforeImage, afterImage }: BeforeAfterCo
           <div className="comparison-image-wrap comparison-placeholder">
             <div className="comparison-placeholder-mark"><ImageOff size={24} /></div>
             <strong>{t('result.unavailableTitle')}</strong>
-            <span>{t('result.unavailableBody')}</span>
+            <span>{emptyAfterMessage}</span>
           </div>
           <figcaption><span className="comparison-dot is-after" />{t('result.after')}</figcaption>
         </figure>

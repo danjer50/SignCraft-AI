@@ -1,9 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_SIGN_CONFIGURATION, normalizeMaterials } from '../../domain/sign';
 import { DemoAIProvider } from './demoProvider';
 import type { ImageEditingRequest } from './contracts';
 import { buildStorefrontEditPrompt } from './promptBuilder';
-import { generateStorefrontConcept } from './client';
 
 const configuration = {
   ...DEFAULT_SIGN_CONFIGURATION,
@@ -19,6 +18,11 @@ const request: ImageEditingRequest = {
   preserveSourceArchitecture: true,
   exactTextOverlayRequired: true,
 };
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
+});
 
 describe('storefront image-edit architecture', () => {
   it('builds an inpainting brief that protects the source facade and exact text', () => {
@@ -156,10 +160,19 @@ describe('storefront image-edit architecture', () => {
     }
   });
 
-  it('keeps the frontend demo provider local and unavailable by default', async () => {
-    const result = await generateStorefrontConcept({ sourceImage: request.sourceImage, configuration: request.configuration });
+  it('keeps the offline demo mode local and unavailable, only when it is explicitly requested', async () => {
+    vi.resetModules();
+    vi.stubEnv('VITE_AI_MODE', 'demo');
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    const { generateStorefrontConcept: generateInDemoMode } = await import('./client');
+
+    const result = await generateInDemoMode({ sourceImage: request.sourceImage, configuration: request.configuration });
+
     expect(result.status).toBe('UNAVAILABLE');
     expect(result.sourceImageTransfer).toBe('LOCAL_ONLY');
     expect(result).not.toHaveProperty('imageUrl');
+    // Nothing left the browser: the demo provider never touches the network.
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 });

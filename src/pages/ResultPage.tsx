@@ -61,14 +61,17 @@ export function ResultPage() {
           ? t('result.photoTransferUnknown')
           : t('result.notUploaded');
   const photoPrivacyNote = t(photoPrivacyMessageKey(concept, clientConfig.aiMode, clientConfig.quoteMode));
+  // The demo sentence is only true in demo mode: in `api` mode the browser really did ask the
+  // server, so an empty stage is reported as an unanswered AI request instead of a demo limitation.
+  const unavailableBodyKey = clientConfig.aiMode === 'api' ? 'result.unavailableApiBody' : 'result.unavailableBody';
   const resultStatusLabel = generated
     ? t('result.generated')
-    : concept?.status === 'ERROR'
+    : concept?.status === 'ERROR' || clientConfig.aiMode === 'api'
       ? t('ai.failedBadge')
       : t('studio.aiDemoBadge');
   const resultMessage = concept?.status === 'ERROR'
     ? t(aiErrorMessageKey(concept.errorCode))
-    : t('result.unavailableBody');
+    : t(unavailableBodyKey);
   const materialsLabel = config.materials.length === 0
     ? t('result.materialsNone')
     : config.materials.map((material) => t(`material.${material}`)).join(' · ');
@@ -115,7 +118,11 @@ export function ResultPage() {
       <section className="result-stage" aria-busy={busy}>
         <div className="result-section-top"><div><span className="eyebrow">01 · {t('result.reference')}</span><h2>{t('result.comparisonTitle')}</h2></div><span className="result-project-id">SC / {state.id.slice(0, 8).toUpperCase()}</span></div>
         <div className="result-stage-frame">
-          <BeforeAfterComparison beforeImage={state.photo?.previewUrl} afterImage={generated ? concept.imageUrl : undefined} />
+          <BeforeAfterComparison
+            beforeImage={state.photo?.previewUrl}
+            afterImage={generated ? concept.imageUrl : undefined}
+            unavailableMessage={t(unavailableBodyKey)}
+          />
         </div>
         {!generated && !busy && (
           <div className="result-unavailable-banner" role="status" aria-live="polite">

@@ -35,7 +35,8 @@ describe('storefront upload field', () => {
     fireEvent.change(screen.getByLabelText('Choisir une photo'), { target: { files: [file] } });
 
     await waitFor(() => expect(screen.getByAltText('Photo sélectionnée — boutique.webp')).toBeInTheDocument());
-    expect(screen.getByText(/reste dans votre navigateur/i)).toBeInTheDocument();
+    // The default build calls the server, so the notice explains the resized copy that is sent.
+    expect(screen.getByText(/envoyée au serveur SignCraft/i)).toBeInTheDocument();
     expect(screen.getByText(/PHOTO LOCALE|non transmise/i)).toBeInTheDocument();
   });
 

@@ -6,30 +6,34 @@ import react from '@vitejs/plugin-react';
 /**
  * Dev-only API middleware.
  *
- * The authentication endpoints are the same shared handlers that Vercel (`api/**`) and Cloudflare
- * Pages (`functions/**`) run, loaded here through Vite's SSR module runner so `npm run dev` can sign
- * a developer in against a local `.env`. Nothing about the deployed architecture changes: no extra
- * server, no second implementation, no mock auth. Without the environment variables the endpoints
- * answer `AUTH_NOT_CONFIGURED`, exactly like an unconfigured deployment.
+ * The authentication and AI endpoints are the same shared handlers that Vercel (`api/**`) and
+ * Cloudflare Pages (`functions/**`) run, loaded here through Vite's SSR module runner so `npm run
+ * dev` can sign a developer in and run a real sign generation against a local `.env`. Nothing about
+ * the deployed architecture changes: no extra server, no second implementation, no mock provider.
+ * Without the environment variables the endpoints answer `AUTH_NOT_CONFIGURED` or "no provider
+ * configured", exactly like an unconfigured deployment.
  */
 type AuthHandler = (request: Request, environment: Record<string, string | undefined>) => Promise<Response>;
 
-const AUTH_ROUTES: Array<{ path: string; module: string; handler: string }> = [
+const DEV_API_ROUTES: Array<{ path: string; module: string; handler: string }> = [
   { path: '/api/auth/login', module: '/server/http/auth.ts', handler: 'handleLogin' },
   { path: '/api/auth/logout', module: '/server/http/auth.ts', handler: 'handleLogout' },
   { path: '/api/auth/session', module: '/server/http/auth.ts', handler: 'handleSession' },
   { path: '/api/admin/overview', module: '/server/http/admin.ts', handler: 'handleAdminOverview' },
   { path: '/api/admin/users', module: '/server/http/admin.ts', handler: 'handleAdminUsers' },
   { path: '/api/admin/pro-accounts', module: '/server/http/admin.ts', handler: 'handleAdminProAccounts' },
+  // Multi-provider AI routing, including the Groq / Gemini / OpenRouter fallback chain.
+  { path: '/api/ai/generate-sign', module: '/server/http/ai.ts', handler: 'handleAiGeneration' },
+  { path: '/api/ai/generate', module: '/server/http/ai.ts', handler: 'handleAiGeneration' },
 ];
 
-function devAuthApi(environment: Record<string, string | undefined>): Plugin {
+function devApiRoutes(environment: Record<string, string | undefined>): Plugin {
   return {
-    name: 'signcraft-dev-auth-api',
+    name: 'signcraft-dev-api-routes',
     configureServer(server) {
       server.middlewares.use(async (request: IncomingMessage, response: ServerResponse, next: () => void) => {
         const url = request.url ?? '/';
-        const route = AUTH_ROUTES.find((entry) => url === entry.path || url.startsWith(`${entry.path}?`));
+        const route = DEV_API_ROUTES.find((entry) => url === entry.path || url.startsWith(`${entry.path}?`));
         if (!route) {
           next();
           return;
@@ -77,7 +81,7 @@ function devAuthApi(environment: Record<string, string | undefined>): Plugin {
 export default defineConfig(({ mode }) => ({
   // `loadEnv(..., '')` reads every variable (not only VITE_*) so the dev middleware can run the
   // real authentication handlers against a local `.env`.
-  plugins: [react(), devAuthApi(loadEnv(mode, process.cwd(), ''))],
+  plugins: [react(), devApiRoutes(loadEnv(mode, process.cwd(), ''))],
   server: {
     host: '0.0.0.0',
     strictPort: false,

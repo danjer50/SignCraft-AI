@@ -1,6 +1,6 @@
 import type { AIErrorCode } from '../../../src/domain/sign.js';
 import { hasValidImageSignature } from '../../http/imageValidation.js';
-import type { AIEnvironment, ServerAIProvider, ServerAIResult, ServerImageEditInput } from '../types.js';
+import type { AIEnvironment, ServerAIImageProvider, ServerAIResult, ServerImageEditInput } from '../types.js';
 
 export const CLOUDFLARE_FLUX_MODEL = '@cf/black-forest-labs/flux-2-klein-9b';
 const CLOUDFLARE_API_BASE = 'https://api.cloudflare.com/client/v4/accounts/';
@@ -87,8 +87,10 @@ function outputDimensions(width: number, height: number): { width: number; heigh
  * bearer token are read only from the server environment; the destination host
  * and model path are constants, so request data cannot become an arbitrary URL.
  */
-export class CloudflareFluxProvider implements ServerAIProvider {
+export class CloudflareFluxProvider implements ServerAIImageProvider {
   readonly id = 'cloudflare-flux-2-klein-9b';
+  /** Cloudflare Workers AI serves the storefront image-edit task (and nothing else here). */
+  readonly capabilities = ['image-edit'] as const;
 
   constructor(
     private readonly environment: AIEnvironment,
