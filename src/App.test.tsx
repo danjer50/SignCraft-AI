@@ -12,7 +12,10 @@ const routes = [
   { path: '/studio?step=5', expected: /Quelles matières pour votre enseigne/ },
   { path: '/result', expected: /Aucun concept à afficher pour le moment/ },
   { path: '/professional', expected: /Du concept à l’atelier/ },
-  { path: '/admin', expected: /Suivez les demandes présentes dans ce navigateur/ },
+  // One shared login page; the private areas send an anonymous visitor there instead of failing.
+  { path: '/login', expected: /Un seul accès, trois espaces/ },
+  { path: '/pro', expected: /Un seul accès, trois espaces/ },
+  { path: '/admin', expected: /Un seul accès, trois espaces/ },
   { path: '/cette-page-n-existe-pas', expected: /Cette page n’existe pas/ },
 ];
 
@@ -40,10 +43,10 @@ describe('routing resilience', () => {
   });
 
   it('keeps the customer header free of professional and admin links on every route', async () => {
-    window.history.pushState({}, '', '/admin');
+    window.history.pushState({}, '', '/studio');
     render(<App />);
 
-    expect(await screen.findByText(/Suivez les demandes présentes dans ce navigateur/)).toBeInTheDocument();
+    expect(await screen.findByText(/Ajoutez une photo de votre devanture/)).toBeInTheDocument();
     const header = document.querySelector('.site-header');
     expect(header?.textContent).not.toContain('Demandes');
     expect(header?.textContent).toContain('Studio');

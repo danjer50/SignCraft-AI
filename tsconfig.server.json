@@ -19,6 +19,7 @@
     "server/**/*.ts",
     "api/**/*.ts",
     "functions/**/*.ts",
+    "src/domain/auth.ts",
     "src/domain/sign.ts",
     "src/services/upload.ts",
     "src/services/ai/contracts.ts",

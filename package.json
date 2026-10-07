@@ -10,7 +10,8 @@
     "typecheck": "tsc -b --pretty",
     "lint": "eslint .",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "hash-password": "node scripts/hash-password.mjs"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",

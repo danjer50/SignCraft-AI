@@ -50,7 +50,52 @@ The domain model in `src/domain/professional.ts` separates production designs, m
 
 `/admin` provides a local demonstration inbox and the requested statuses: `NEW`, `CONTACTED`, `QUOTED`, `ACCEPTED`, `COMPLETED` and `CANCELLED`.
 
-In the default foundation, requests are stored only in the current browser’s local storage. The admin view is not authenticated, not shared between devices, and does not receive external requests. Do not use it as a production admin system until authentication and a persistent repository are connected.
+In the default foundation, requests are stored only in the current browser’s local storage. The inbox is not shared between devices and does not receive external requests; it becomes a server-backed queue when a persistent repository is connected.
+
+`/admin` is now behind authentication: it renders only for a signed-in **ADMIN** account, and its data endpoints (`/api/admin/overview`, `/api/admin/users`, `/api/admin/pro-accounts`) authorize that role on the server for every request.
+
+### Admin console structure
+
+The console is organized in the eight sections the operating model needs, each showing its real state (`ready`, `local-only`, `foundation`) rather than pretending to be finished:
+
+| Section | Today |
+| --- | --- |
+| Users | Lists the configured accounts (never a hash). Read-only until a writable store is attached. |
+| Pro accounts | Lists PRO accounts. Create / edit / suspend / remove are wired to the repository seam and answer `WRITE_STORE_NOT_CONFIGURED` until a durable store exists. |
+| Customer projects | Foundation: projects are still drafted in the customer’s own browser. |
+| Quote requests | The existing local inbox, unchanged, plus the configured storage provider. |
+| AI usage | Reports the active provider; activity logging is not connected. |
+| Website settings | Foundation: needs a writable store. |
+| Feature settings | Reports the live feature flags (`AI_PROVIDER`, `QUOTE_STORAGE_PROVIDER`, account counts). |
+| System & errors | Session security summary (cookie name, TTL, SameSite, hashing parameters, whether the signing secret is configured) and configuration problems to fix. |
+
+## Authentication and roles
+
+One login page (`/login`) serves every role. There is no role selector and no self-registration: credentials go to the server, the server verifies them and answers with the account plus the area it may open, and the browser follows.
+
+| Role | Destination | Notes |
+| --- | --- | --- |
+| `ADMIN` | `/admin` | Exactly one account: the owner, configured through the environment. |
+| `PRO` | `/pro` | Protected placeholder. The production tools are not built yet. |
+| `CUSTOMER` | `/` | The public design experience, which needs no account at all. |
+
+How it works:
+
+- **Passwords** are PBKDF2-HMAC-SHA256 (210 000 iterations, 16-byte salt, 256-bit key) through WebCrypto, so the same code runs on Vercel Node functions and Cloudflare Pages Workers with no native dependency. Stored values look like `pbkdf2-sha256$210000$<salt>$<hash>`; a plaintext or malformed value is refused, never compared. Verification is length-independent, a missing account costs the same time as a wrong password, and repeated failures are throttled per identifier.
+- **Sessions** are stateless signed cookies (HMAC-SHA256 over the claim set, `HttpOnly`, `Secure` on HTTPS/localhost, `SameSite=Lax` by default, 12-hour TTL). No session store is needed, no token is readable by page script, and a tampered or expired cookie is rejected. `AUTH_COOKIE_SAME_SITE=none` exists for embedding the app in a frame on another site.
+- **Authorization** is server-side. `requireRole()` in `server/auth/guard.ts` answers `401` (anonymous, expired or unverifiable session) or `403` (wrong role, with the caller’s own area in the body) before any handler reads data. State-changing calls also require a same-origin request. The React route guard is a UX layer only: bypassing it gains nothing.
+- **Accounts** come from the deployment environment (`server/auth/users.ts`), because the project has no database. `AUTH_USERS_JSON` may add PRO and CUSTOMER accounts; **ADMIN entries there are refused**, so the owner account is the only path to administrative privileges. The `UserRepository` interface already declares `createProAccount`, `updateAccount`, `setAccountStatus` and `removeAccount`, so a durable store (D1, KV, Postgres…) can replace the environment-backed one without touching the HTTP layer or the UI.
+
+Provisioning the owner account — the password is read from stdin and never printed, logged, committed or sent to the browser:
+
+```bash
+npm run hash-password          # prints only the hash and the variables to set
+node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"   # session secret
+```
+
+Then set `AUTH_SESSION_SECRET`, `AUTH_OWNER_EMAIL` (or `AUTH_OWNER_USERNAME`) and `AUTH_OWNER_PASSWORD_HASH` in the deployment environment (Vercel → Environment Variables, or `wrangler pages secret put`). Until they are set, the endpoints answer `AUTH_NOT_CONFIGURED` and the login page says so plainly — there is no backdoor and no default credential.
+
+`npm run dev` serves the very same handlers through a small Vite middleware (`vite.config.ts`), reading a local `.env`, so authentication can be exercised locally without a second implementation.
 
 ## Architecture
 
@@ -85,6 +130,7 @@ Requirements: Node.js 20+ and npm.
 ```bash
 npm install
 cp .env.example .env
+npm run hash-password   # optional: provision the owner (ADMIN) account, prints a hash only
 npm run dev
 ```
 
@@ -117,6 +163,14 @@ Copy `.env.example` and configure only what you need:
 | `QUOTE_STORAGE_PROVIDER` | **Server only** | `demo` | Future persistent quote repository adapter. |
 | `QUOTE_STORAGE_URL` | **Server only** | empty | Future repository endpoint. |
 | `QUOTE_STORAGE_KEY` | **Server only** | empty | Future server-side storage credential. |
+| `AUTH_SESSION_SECRET` | **Server secret** | empty | HMAC key that signs session cookies. At least 32 characters; without it nobody can sign in. Never prefix it with `VITE_`. |
+| `AUTH_SESSION_TTL_MINUTES` | **Server only** | `720` | Session lifetime in minutes. |
+| `AUTH_COOKIE_NAME` | **Server only** | `signcraft_session` | Session cookie name. |
+| `AUTH_COOKIE_SAME_SITE` | **Server only** | `lax` | `lax`, `strict` or `none` (`none` requires HTTPS; use it only when the app is framed by another site). |
+| `AUTH_OWNER_USERNAME` | **Server only** | empty | Owner sign-in name. With `AUTH_OWNER_EMAIL`, identifies the single ADMIN account. |
+| `AUTH_OWNER_EMAIL` | **Server only** | empty | Owner sign-in email. |
+| `AUTH_OWNER_PASSWORD_HASH` | **Server secret** | empty | PBKDF2 hash from `npm run hash-password`. Plaintext is refused. |
+| `AUTH_USERS_JSON` | **Server secret** | empty | Optional JSON array of additional PRO/CUSTOMER accounts (`id`, `username`, `email`, `role`, `passwordHash`, optional `status`). ADMIN entries are refused. |
 
 `VITE_*` values are public and compiled into the frontend bundle. Keep secrets exclusively in Vercel/Cloudflare server environment settings.
 
