@@ -38,6 +38,8 @@ export interface AuthEnvironment {
   GEMINI_MODEL?: string;
   OPENROUTER_API_KEY?: string;
   OPENROUTER_MODEL?: string;
+  POLLINATIONS_API_KEY?: string;
+  POLLINATIONS_MODEL?: string;
   CLOUDFLARE_ACCOUNT_ID?: string;
   CLOUDFLARE_API_TOKEN?: string;
   QUOTE_STORAGE_PROVIDER?: string;

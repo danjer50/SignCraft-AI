@@ -2,6 +2,7 @@ import { CLOUDFLARE_FLUX_MODEL, CloudflareFluxProvider } from './providers/cloud
 import { GEMINI_DEFAULT_MODEL, GeminiImageProvider } from './providers/gemini.js';
 import { GROQ_DEFAULT_MODEL, GroqTextProvider } from './providers/groq.js';
 import { OPENROUTER_DEFAULT_MODEL, OpenRouterImageProvider } from './providers/openRouter.js';
+import { POLLINATIONS_DEFAULT_MODEL, PollinationsImageProvider } from './providers/pollinations.js';
 import type {
   AIEnvironment,
   AIProviderOptions,
@@ -33,6 +34,10 @@ export interface AIProviderEntry {
  *
  * Groq is listed first because that is the requested order, but it declares only `text` support,
  * so the image router skips it without spending a request (see PHASE 8 capability handling).
+ *
+ * Pollinations is deliberately absent: it joins the chain only when an operator names it in
+ * `AI_PROVIDER_ORDER` or pins it with `AI_PROVIDER=pollinations`, so adding it changed no existing
+ * deployment's behaviour.
  */
 export const DEFAULT_PROVIDER_ORDER = ['groq', 'gemini', 'openrouter'] as const;
 
@@ -77,6 +82,20 @@ export const AI_PROVIDER_ENTRIES: readonly AIProviderEntry[] = [
       options?.fetchImpl,
       options?.timeoutMs,
     ),
+  },
+  {
+    /**
+     * Opt-in image provider: it is never called unless named in `AI_PROVIDER_ORDER` or pinned with
+     * `AI_PROVIDER=pollinations`, and it declares only the image-edit capability (Pollinations also
+     * serves text, but SignCraft's text task has no Pollinations adapter, so the router would never
+     * schedule it for text).
+     */
+    id: 'pollinations',
+    label: 'Pollinations (image edits)',
+    capabilities: ['image-edit'],
+    model: (environment) => environment.POLLINATIONS_MODEL?.trim() || POLLINATIONS_DEFAULT_MODEL,
+    isConfigured: (environment) => nonEmpty(environment.POLLINATIONS_API_KEY),
+    createImageProvider: (environment, options) => new PollinationsImageProvider(environment, options),
   },
 ];
 

@@ -59,7 +59,8 @@ function scriptedFetch(scripts: Record<string, () => Response | Promise<Response
     const host = url.includes('generativelanguage.googleapis.com') ? 'gemini'
       : url.includes('openrouter.ai') ? 'openrouter'
         : url.includes('api.groq.com') ? 'groq'
-          : url.includes('api.cloudflare.com') ? 'cloudflare' : 'unknown';
+          : url.includes('gen.pollinations.ai') ? 'pollinations'
+            : url.includes('api.cloudflare.com') ? 'cloudflare' : 'unknown';
     const script = scripts[host];
     if (!script) return new Response(JSON.stringify({ error: { message: 'unexpected host' } }), { status: 500 });
     return script();
@@ -72,6 +73,15 @@ function failure(status: number, message: string): () => Response {
 
 const geminiOnly: AIEnvironment = { GEMINI_API_KEY: GEMINI_KEY };
 const allThree: AIEnvironment = { GEMINI_API_KEY: GEMINI_KEY, OPENROUTER_API_KEY: OPENROUTER_KEY, GROQ_API_KEY: GROQ_KEY };
+const POLLINATIONS_KEY = 'pollinations-test-only-key-never-real';
+const allFour: AIEnvironment = { ...allThree, POLLINATIONS_API_KEY: POLLINATIONS_KEY };
+
+function pollinationsImageResponse(): Response {
+  return new Response(JSON.stringify({
+    created: 1_700_000_000,
+    data: [{ b64_json: Buffer.from(tinyPng()).toString('base64'), media_type: 'image/png' }],
+  }), { status: 200, headers: { 'content-type': 'application/json' } });
+}
 
 let logSpy: ReturnType<typeof vi.spyOn>;
 
@@ -129,6 +139,35 @@ describe('provider chain resolution', () => {
     const chain = resolveProviderChain('text', allThree);
 
     expect(chain.attempts.map((step) => step.entry.id)).toEqual(['groq']);
+  });
+
+  it('keeps Pollinations out of the default chain entirely, even when its key is present', () => {
+    const chain = resolveProviderChain('image-edit', allFour);
+
+    expect(chain.attempts.map((step) => step.entry.id)).toEqual(['gemini', 'openrouter']);
+    expect(chain.attempts.some((step) => step.entry.id === 'pollinations')).toBe(false);
+    expect(chain.skipped.some((entry) => entry.id === 'pollinations')).toBe(false);
+  });
+
+  it('schedules Pollinations only when an explicit order names it', () => {
+    const chain = resolveProviderChain('image-edit', { ...allFour, AI_PROVIDER_ORDER: 'pollinations,gemini' });
+
+    expect(chain.attempts.map((step) => step.entry.id)).toEqual(['pollinations', 'gemini']);
+    expect(chain.attempts[0].requested).toBe('listed');
+  });
+
+  it('honours AI_PROVIDER=pollinations as a pin, with a configured provider as fallback', () => {
+    const chain = resolveProviderChain('image-edit', { ...allFour, AI_PROVIDER: 'pollinations' });
+
+    expect(chain.attempts.map((step) => step.entry.id)).toEqual(['pollinations', 'gemini', 'openrouter']);
+    expect(chain.pinned).toBe('pollinations');
+  });
+
+  it('never schedules Pollinations for the text task it has no adapter for', () => {
+    const chain = resolveProviderChain('text', { ...allFour, AI_PROVIDER_ORDER: 'groq,pollinations' });
+
+    expect(chain.attempts.map((step) => step.entry.id)).toEqual(['groq']);
+    expect(chain.skipped).toContainEqual({ id: 'pollinations', reason: 'unsupported' });
   });
 
   it('attempts an explicitly listed provider even without credentials, so the real reason is reported', () => {
@@ -346,5 +385,57 @@ describe('text task (no screen calls this yet)', () => {
     expect(result.status).toBe('ERROR');
     if (result.status === 'ERROR') expect(result.errorCode).toBe('AI_RATE_LIMITED');
     expect(JSON.stringify(result)).not.toContain(GROQ_KEY);
+  });
+});
+
+describe('Pollinations as a fallback image provider', () => {
+  it('falls back to Gemini when Pollinations is rate-limited, without parallel calls', async () => {
+    const fetchMock = scriptedFetch({
+      pollinations: failure(429, 'Too many requests'),
+      gemini: geminiImageResponse,
+    });
+    const result = await runImageEditTask(makeInput(), { ...allFour, AI_PROVIDER_ORDER: 'pollinations,gemini' }, { fetchImpl: fetchMock });
+
+    expect(result.status).toBe('GENERATED');
+    if (result.status === 'GENERATED') expect(result.providerId).toBe('gemini');
+    expect(String(fetchMock.mock.calls[0][0])).toBe('https://gen.pollinations.ai/v1/images/edits');
+    expect(String(fetchMock.mock.calls[1][0])).toContain('generativelanguage.googleapis.com');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(logSpy).toHaveBeenCalledWith('[AI] pollinations failed (AI_RATE_LIMITED)');
+    expect(logSpy).toHaveBeenCalledWith('[AI] falling back to gemini');
+  });
+
+  it('serves the request from Pollinations when it is first and succeeds', async () => {
+    const fetchMock = scriptedFetch({ pollinations: pollinationsImageResponse });
+    const result = await runImageEditTask(makeInput(), { ...allFour, AI_PROVIDER_ORDER: 'pollinations,gemini' }, { fetchImpl: fetchMock });
+
+    expect(result.status).toBe('GENERATED');
+    if (result.status === 'GENERATED') expect(result.providerId).toBe('pollinations');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('makes no network call at all when a listed Pollinations key is missing', async () => {
+    const fetchMock = scriptedFetch({ gemini: geminiImageResponse });
+    const result = await runImageEditTask(makeInput(), {
+      AI_PROVIDER_ORDER: 'pollinations,gemini',
+      GEMINI_API_KEY: GEMINI_KEY,
+      OPENROUTER_API_KEY: OPENROUTER_KEY,
+    }, { fetchImpl: fetchMock });
+
+    // Pollinations is reported as unconfigured and skipped; Gemini then serves the request.
+    expect(result.status).toBe('GENERATED');
+    if (result.status === 'GENERATED') expect(result.providerId).toBe('gemini');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0][0])).toContain('generativelanguage.googleapis.com');
+    expect(logSpy).toHaveBeenCalledWith('[AI] pollinations failed (AI_NOT_CONFIGURED)');
+  });
+
+  it('ignores a Pollinations key when no order or pin activates it', async () => {
+    const fetchMock = scriptedFetch({ gemini: geminiImageResponse });
+    const result = await runImageEditTask(makeInput(), allFour, { fetchImpl: fetchMock });
+
+    expect(result.status).toBe('GENERATED');
+    if (result.status === 'GENERATED') expect(result.providerId).toBe('gemini');
+    expect(fetchMock.mock.calls.some((call) => String(call[0]).includes('pollinations'))).toBe(false);
   });
 });

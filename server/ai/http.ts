@@ -17,6 +17,39 @@ export interface JsonPostResult {
 }
 
 /**
+ * POST a `multipart/form-data` body with a hard timeout.
+ *
+ * Same contract as `postJson` (fixed code-level host, abort on timeout, defensive body parsing) for
+ * providers that accept an uploaded file instead of JSON. The content type is deliberately not set:
+ * `FormData` supplies it together with the multipart boundary.
+ */
+export async function postMultipart(
+  url: string,
+  headers: Record<string, string>,
+  form: FormData,
+  fetchImpl: typeof fetch,
+  timeoutMs: number,
+): Promise<JsonPostResult> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetchImpl(url, {
+      method: 'POST',
+      headers: { ...headers },
+      body: form,
+      signal: controller.signal,
+    });
+    const body = await response.json().catch(() => null);
+    return { ok: response.ok, status: response.status, body, aborted: false };
+  } catch (error) {
+    const aborted = controller.signal.aborted || (error instanceof DOMException && error.name === 'AbortError');
+    return { ok: false, status: aborted ? 504 : 0, body: null, aborted };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+/**
  * POST a JSON body with a hard timeout.
  *
  * Only fixed, code-level provider hosts are ever passed in, so no request data can turn this into

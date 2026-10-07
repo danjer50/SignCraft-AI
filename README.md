@@ -115,7 +115,7 @@ src/
   services/draftStorage.ts  Safe local-storage read/write/clear for the customer draft
 server/
   ai/                  Server-only provider contracts, capability registry, fallback router and the
-                       Cloudflare FLUX.2 / Gemini / OpenRouter / Groq adapters
+                       Cloudflare FLUX.2 / Gemini / OpenRouter / Pollinations / Groq adapters
   http/                Validating AI and quote API handlers
   quotes/              Quote repository abstraction
 api/                   Vercel-compatible serverless entry points
@@ -164,6 +164,8 @@ Copy `.env.example` and configure only what you need:
 | `GEMINI_MODEL` | **Server only** | `gemini-3.1-flash-image` | Gemini image model. Change it when Google renames or retires a model; `gemini-3.1-flash-lite-image` is the cheaper option and `gemini-3-pro-image` the higher-quality one. |
 | `OPENROUTER_API_KEY` | **Server secret** | empty | OpenRouter API key. |
 | `OPENROUTER_MODEL` | **Server only** | `google/gemini-3.1-flash-image` | Must be an OpenRouter model that accepts image input and returns image output. |
+| `POLLINATIONS_API_KEY` | **Server secret** | empty | Pollinations secret key (`sk_…`), backend-only. **Opt-in:** nothing is sent to Pollinations unless it is named in `AI_PROVIDER_ORDER` or pinned with `AI_PROVIDER=pollinations`. |
+| `POLLINATIONS_MODEL` | **Server only** | `black-forest-labs/flux.1-kontext-pro` | Must accept image input; the endpoint's own default is a text-to-image model that would ignore the source photo, so an edit-capable model is always sent explicitly. |
 | `AI_PROVIDER_TIMEOUT_MS` | **Server only** | `90000` | Maximum time for one provider attempt. |
 | `AI_TOTAL_TIMEOUT_MS` | **Server only** | `110000` | Maximum time for the whole chain. Keep it below the browser's 120 s abort. |
 | `AI_PROVIDER` | **Server only** | `demo` | Legacy single-provider pin. `cloudflare-flux` keeps `@cf/black-forest-labs/flux-2-klein-9b` first in the chain, with every configured provider as a fallback. `demo` (or empty) means "no pin": only providers with a key are called. Unknown names never fabricate an image. |
@@ -194,8 +196,11 @@ The client-side contract lives in `src/services/ai/contracts.ts`. Server adapter
 | Google Gemini | `gemini` | storefront image editing | `GEMINI_MODEL` |
 | OpenRouter | `openrouter` | storefront image editing | `OPENROUTER_MODEL` |
 | Cloudflare Workers AI | `cloudflare-flux` | storefront image editing | fixed: `@cf/black-forest-labs/flux-2-klein-9b` |
+| Pollinations | `pollinations` | storefront image editing | `POLLINATIONS_MODEL` |
 
 **A provider joins the chain as soon as its key is present; you do not need all of them.** With only `GEMINI_API_KEY` set, Gemini serves every generation. Add `OPENROUTER_API_KEY` and OpenRouter becomes the fallback.
+
+**Pollinations is opt-in.** It is not in the default order, so adding it changed no existing deployment: it is used only when you name it in `AI_PROVIDER_ORDER` (for example `pollinations,gemini,openrouter`) or pin it with `AI_PROVIDER=pollinations`. With no `POLLINATIONS_API_KEY` it is skipped and no request is made.
 
 ### How the fallback works
 
@@ -214,6 +219,15 @@ The client-side contract lives in `src/services/ai/contracts.ts`. Server adapter
 3. Redeploy so the frontend mode and server environment are both active. For local secrets, `.env` is git-ignored; `npm run dev` now also serves `/api/ai/generate-sign` through the same shared handler, so the real chain can be exercised locally.
 
 Google Gemini is called at the fixed `generativelanguage.googleapis.com` host with the key in the `x-goog-api-key` header; the source photo travels as `inline_data` base64 and the edited image is read back from `candidates[0].content.parts[].inlineData`. OpenRouter is called at the fixed `openrouter.ai/api/v1/chat/completions` host with `modalities: ["text","image"]`; the photo is attached as a base64 `image_url` and the edited image is read from `choices[0].message.images[]`. Both adapters validate the returned bytes' image signature before anything is returned to the browser, and both hosts are constants, so request data cannot become an arbitrary URL.
+
+### Pollinations (opt-in image provider)
+
+`server/ai/providers/pollinations.ts` posts `multipart/form-data` to the fixed endpoint `https://gen.pollinations.ai/v1/images/edits`, sending the resized storefront photo as the `image` part (filename `storefront.jpg`), the existing SignCraft prompt, an edit-capable `model` and `response_format=b64_json`. The edited image is read from `data[0].b64_json` and its magic bytes are validated before it reaches the browser. A URL-only result is deliberately **not** fetched: following a provider-supplied URL would let a response steer the server at an arbitrary host.
+
+- **The endpoint requires a key.** Pollinations requires `Authorization: Bearer <key>` for generation calls; `401 UNAUTHORIZED` means the key is missing or invalid and `402 PAYMENT_REQUIRED` means the account or key budget is exhausted. Pollinations documents `sk_*` secret keys as backend-only and states they must never be shipped to a browser, a mobile app or a repository — which is exactly how SignCraft uses it.
+- **The model must be edit-capable.** The endpoint's own documented default is a text-to-image model, which would ignore the storefront photo, so the adapter always sends `POLLINATIONS_MODEL` (default `black-forest-labs/flux.1-kontext-pro`, the model used in Pollinations' own `/v1/images/edits` example).
+- **No free daily quota is documented or claimed.** Pollinations operates a Pollen balance: the account reports `accountBalance: { total, tier, paid }`, where `tier` is quest Pollen earned on the account and `paid` is purchased Pollen; `paid_only` models are hidden from keys that can only spend quest Pollen. The only rate limit stated in the documentation applies to the *legacy raw `pk_` publishable key* path ("1 pollen per IP per hour"), which this server-side `sk_` integration does not use. Treat Pollinations as a credit-based provider: check your balance in the Pollinations dashboard rather than assuming a free allowance.
+- Pollinations also offers text and other modalities, but SignCraft's `text` task has no Pollinations adapter, so the router never schedules it for text work.
 
 ### Manage your quota
 
@@ -255,7 +269,7 @@ Cloudflare references: [FLUX.2 Klein 9B model schema](https://developers.cloudfl
 - `/api/ai/generate-sign` (and the backwards-compatible `/api/ai/generate`) plus `/api/quotes` are Vercel Node function entry points under `api/`; a bounded request adapter converts multipart bodies to the shared Fetch handlers. The AI client uploads only its resized/compressed copy. Keep platform payload limits in mind and use signed object-storage uploads if quote uploads approach platform limits.
 - The SPA rewrite is in `vercel.json`.
 - Add server secrets in Vercel’s project environment settings, not in client variables.
-- **Exact Vercel environment variables.** Required for sign generation: `VITE_AI_MODE=api` (build-time, public) and at least one of `GEMINI_API_KEY`, `OPENROUTER_API_KEY` or the `CLOUDFLARE_ACCOUNT_ID` + `CLOUDFLARE_API_TOKEN` pair. Optional: `AI_PROVIDER_ORDER` (default `groq,gemini,openrouter`), `GEMINI_MODEL`, `OPENROUTER_MODEL`, `GROQ_API_KEY` + `GROQ_MODEL` (text models only), `AI_PROVIDER_TIMEOUT_MS`, `AI_TOTAL_TIMEOUT_MS`, and the legacy `AI_PROVIDER` pin. All of these are server-side: never prefix an AI key with `VITE_`.
+- **Exact Vercel environment variables.** Required for sign generation: `VITE_AI_MODE=api` (build-time, public) and at least one of `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, `POLLINATIONS_API_KEY` (with `AI_PROVIDER_ORDER` naming `pollinations`) or the `CLOUDFLARE_ACCOUNT_ID` + `CLOUDFLARE_API_TOKEN` pair. Optional: `AI_PROVIDER_ORDER` (default `groq,gemini,openrouter`), `GEMINI_MODEL`, `OPENROUTER_MODEL`, `POLLINATIONS_MODEL`, `GROQ_API_KEY` + `GROQ_MODEL` (text models only), `AI_PROVIDER_TIMEOUT_MS`, `AI_TOTAL_TIMEOUT_MS`, and the legacy `AI_PROVIDER` pin. All of these are server-side: never prefix an AI key with `VITE_`.
 - A chain can outlive a very short function limit. If your plan caps function duration below `AI_TOTAL_TIMEOUT_MS`, lower `AI_PROVIDER_TIMEOUT_MS` and `AI_TOTAL_TIMEOUT_MS` to fit.
 
 ### Cloudflare Pages
@@ -284,6 +298,8 @@ To emit a production sitemap, set `SITE_URL=https://your-domain.example` for the
 The test suite covers prompt realism and exact-text data, multi-material prompt building, browser-side image resizing, demo-provider honesty, AI client failure mapping (timeout, dropped connection, unsafe or unconfirmed response), Cloudflare multipart payload/response parsing with mocked fetch, missing configuration, invalid/oversized images, provider errors, timeouts and network failure, upload interaction, quote creation/local fallback, admin status changes, French/English/Arabic switching and RTL direction.
 
 It also covers the multi-provider layer with mocked provider responses only (no real API call is ever made): fallback order resolution and `AI_PROVIDER` pinning, Groq being skipped for image tasks because it has no image models, fallback on rate limit / quota / authentication failure / outage / unusable payload, missing-key skipping without a wasted request, the all-providers-failed message, the per-chain timeout budget, the exact request shape sent to each provider host, and the guarantee that no provider key can appear in a response body or an error message.
+
+Pollinations specifically is covered by mocked tests for the multipart upload to `/v1/images/edits` (photo bytes, filename and MIME type, prompt, `response_format=b64_json`, bearer header and no manually set content type), the always-edit-capable model, `POLLINATIONS_MODEL` overrides, 401/402/403/422/429/5xx mapping, rejection of non-image and URL-only payloads without a second request, timeouts, key non-leakage, opt-in chain resolution, fallback into and out of it, and that a missing key costs no network call.
 
 It also covers the UX guarantees added to the customer flow: the five-step order and per-step validation rules, multi-material selection with the six-material cap and priority order, draft recovery from corrupted, legacy or tampered local storage, error-boundary rendering/retry/root fallback, and routing resilience — every route (home, studio steps, result, professional, admin, unknown) must render visible content instead of a blank screen. Mocked provider tests are not a live account test.
 

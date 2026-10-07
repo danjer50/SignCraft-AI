@@ -32,6 +32,13 @@ export interface AIEnvironment {
   GEMINI_MODEL?: string;
   OPENROUTER_API_KEY?: string;
   OPENROUTER_MODEL?: string;
+  /**
+   * Pollinations image edits. Opt-in: nothing is sent to Pollinations unless it is named in
+   * `AI_PROVIDER_ORDER` (or pinned with `AI_PROVIDER=pollinations`), so the documented default
+   * order above is unchanged.
+   */
+  POLLINATIONS_API_KEY?: string;
+  POLLINATIONS_MODEL?: string;
 }
 
 /**
