@@ -577,9 +577,11 @@ p { color: var(--muted); }
 .sign-area-marker-head p { margin: 3px 0 0; color: var(--muted); font-size: 11.5px; line-height: 1.55; }
 .sign-area-canvas { position: relative; display: block; width: 100%; line-height: 0; border-radius: 12px; overflow: hidden; border: 1px solid var(--line); background: var(--bg-0); cursor: crosshair; touch-action: none; }
 .sign-area-canvas img { display: block; width: 100%; height: auto; user-select: none; -webkit-user-drag: none; pointer-events: none; }
-.sign-area-rect { position: absolute; border: 2px dashed var(--accent); background: rgba(242, 184, 120, .22); border-radius: 4px; box-shadow: 0 0 0 1px rgba(10, 13, 16, .4); pointer-events: none; }
+.sign-area-paint { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.sign-area-stroke { fill: none; stroke: rgba(242, 184, 120, .62); stroke-width: 22px; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; filter: drop-shadow(0 0 1px rgba(10, 13, 16, .5)); }
 .sign-area-hint { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 0 20px; color: var(--ink-soft); font-size: 11.5px; font-weight: 600; background: linear-gradient(180deg, rgba(8, 10, 12, 0), rgba(8, 10, 12, .35)); pointer-events: none; }
 .sign-area-status { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.sign-area-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .sign-area-badge { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-size: 11px; font-weight: 600; }
 .sign-area-badge-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted-2); }
 .sign-area-badge.is-set { color: var(--ink-soft); }

@@ -47,6 +47,17 @@ function firePointer(target: Element, type: 'pointerdown' | 'pointermove' | 'poi
   fireEvent(target, new MouseEvent(type, { clientX, clientY, bubbles: true, cancelable: true }));
 }
 
+/** One full press→drag→release gesture, mirroring one real brush stroke. */
+function paintStroke(canvas: Element, from: [number, number], to: [number, number]) {
+  firePointer(canvas, 'pointerdown', from[0], from[1]);
+  firePointer(canvas, 'pointermove', to[0], to[1]);
+  firePointer(canvas, 'pointerup', to[0], to[1]);
+}
+
+function strokeElements(): HTMLElement[] {
+  return Array.from(document.querySelectorAll('.sign-area-stroke'));
+}
+
 afterEach(cleanup);
 beforeEach(() => {
   localStorage.clear();
@@ -57,58 +68,89 @@ beforeEach(() => {
 });
 
 describe('sign area marker', () => {
-  it('shows the unmarked state until the customer draws a rectangle', async () => {
+  it('shows the unmarked state until the customer paints a mark', async () => {
     renderMarker();
     const badge = await screen.findByTestId('sign-area-badge');
     expect(badge.className).not.toContain('is-set');
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(strokeElements()).toHaveLength(0);
   });
 
-  it('records a dragged rectangle as percentages of the photo', async () => {
+  it('records a painted stroke as percentages of the photo', async () => {
     renderMarker();
     const canvas = (await screen.findByAltText(/sign placement marker|zone de marquage/i)).parentElement as HTMLElement;
 
-    firePointer(canvas, 'pointerdown', 20, 10);
-    firePointer(canvas, 'pointermove', 100, 60);
-    firePointer(canvas, 'pointerup', 100, 60);
+    paintStroke(canvas, [20, 10], [100, 60]);
 
     await waitFor(() => expect(screen.getByTestId('sign-area-badge').className).toContain('is-set'));
     expect(screen.getByRole('checkbox')).toBeInTheDocument();
 
-    const rect = document.querySelector('.sign-area-rect') as HTMLElement;
     // clientX 20→100 of a 200-wide box is 10%→50%; clientY 10→60 of a 100-tall box is 10%→60%.
-    expect(rect.style.left).toBe('10%');
-    expect(rect.style.top).toBe('10%');
-    expect(rect.style.width).toBe('40%');
-    expect(rect.style.height).toBe('50%');
+    const strokes = strokeElements();
+    expect(strokes).toHaveLength(1);
+    expect(strokes[0].getAttribute('points')).toBe('10,10 50,60');
   });
 
-  it('ignores a drag that never moves (an accidental tap)', async () => {
+  it('adds a second stroke on top of the first instead of restarting the mark', async () => {
+    renderMarker();
+    const canvas = (await screen.findByAltText(/sign placement marker|zone de marquage/i)).parentElement as HTMLElement;
+
+    paintStroke(canvas, [20, 10], [100, 60]);
+    await waitFor(() => expect(strokeElements()).toHaveLength(1));
+
+    // A second, separate drag elsewhere on the photo must be kept alongside the first mark —
+    // this is the exact regression the customer reported: a new drag used to wipe out the
+    // previous one instead of adding to it.
+    paintStroke(canvas, [120, 20], [180, 80]);
+
+    await waitFor(() => expect(strokeElements()).toHaveLength(2));
+    const strokes = strokeElements();
+    expect(strokes[0].getAttribute('points')).toBe('10,10 50,60');
+    expect(strokes[1].getAttribute('points')).toBe('60,20 90,80');
+    expect(screen.getByTestId('sign-area-badge')).toHaveTextContent('2');
+  });
+
+  it('treats a tap with no movement as a small dot mark rather than ignoring it', async () => {
     renderMarker();
     const canvas = (await screen.findByAltText(/sign placement marker|zone de marquage/i)).parentElement as HTMLElement;
 
     firePointer(canvas, 'pointerdown', 20, 10);
     firePointer(canvas, 'pointerup', 20, 10);
 
-    expect(screen.getByTestId('sign-area-badge').className).not.toContain('is-set');
-    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId('sign-area-badge').className).toContain('is-set'));
+    expect(strokeElements()).toHaveLength(1);
   });
 
-  it('clears a marked area and resets the replace-existing-surface flag', async () => {
+  it('undoes only the most recent stroke, keeping earlier marks intact', async () => {
     renderMarker();
     const canvas = (await screen.findByAltText(/sign placement marker|zone de marquage/i)).parentElement as HTMLElement;
 
-    firePointer(canvas, 'pointerdown', 20, 10);
-    firePointer(canvas, 'pointermove', 100, 60);
-    firePointer(canvas, 'pointerup', 100, 60);
-    await waitFor(() => expect(screen.getByTestId('sign-area-badge').className).toContain('is-set'));
+    paintStroke(canvas, [20, 10], [100, 60]);
+    paintStroke(canvas, [120, 20], [180, 80]);
+    await waitFor(() => expect(strokeElements()).toHaveLength(2));
+
+    fireEvent.click(screen.getByRole('button', { name: /Undo last stroke|Annuler le dernier trait/i }));
+
+    await waitFor(() => expect(strokeElements()).toHaveLength(1));
+    expect(strokeElements()[0].getAttribute('points')).toBe('10,10 50,60');
+    expect(screen.getByTestId('sign-area-badge').className).toContain('is-set');
+  });
+
+  it('clears every mark and resets the replace-existing-surface flag', async () => {
+    renderMarker();
+    const canvas = (await screen.findByAltText(/sign placement marker|zone de marquage/i)).parentElement as HTMLElement;
+
+    paintStroke(canvas, [20, 10], [100, 60]);
+    paintStroke(canvas, [120, 20], [180, 80]);
+    await waitFor(() => expect(strokeElements()).toHaveLength(2));
 
     const checkbox = screen.getByRole('checkbox');
     fireEvent.click(checkbox);
     expect(checkbox).toBeChecked();
 
-    fireEvent.click(screen.getByRole('button', { name: /Clear mark|Effacer le marquage/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Clear all|Tout effacer/i }));
     await waitFor(() => expect(screen.getByTestId('sign-area-badge').className).not.toContain('is-set'));
+    expect(strokeElements()).toHaveLength(0);
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
   });
 });

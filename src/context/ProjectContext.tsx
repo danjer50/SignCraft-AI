@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, type ReactNode } from 'react';
 import type {
   AIConceptResult,
-  SignAreaRect,
+  SignArea,
   SignConfiguration,
   SignMaterial,
   StringConfigurationKey,
@@ -28,7 +28,7 @@ type ProjectAction =
   | { type: 'SET_MATERIALS'; materials: SignMaterial[] }
   | { type: 'TOGGLE_MATERIAL'; material: SignMaterial }
   | { type: 'SET_PHOTO'; photo: UploadedStorefrontPhoto | null }
-  | { type: 'SET_SIGN_AREA'; signArea: SignAreaRect | null }
+  | { type: 'SET_SIGN_AREA'; signArea: SignArea | null }
   | { type: 'SET_REPLACE_EXISTING_SURFACE'; value: boolean }
   | { type: 'SET_CONCEPT'; concept: AIConceptResult | null }
   | { type: 'SET_STEP'; step: number }
@@ -43,7 +43,7 @@ interface ProjectContextValue {
   setStep: (step: number) => void;
   setPhotoFile: (file: File) => Promise<void>;
   removePhoto: () => void;
-  setSignArea: (signArea: SignAreaRect | null) => void;
+  setSignArea: (signArea: SignArea | null) => void;
   setReplaceExistingSurface: (value: boolean) => void;
   setConcept: (concept: AIConceptResult | null) => void;
   resetProject: () => void;
@@ -230,7 +230,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     dispatch({ type: 'SET_PHOTO', photo: null });
   }, [releaseOldPreview]);
 
-  const setSignArea = useCallback((signArea: SignAreaRect | null) => {
+  const setSignArea = useCallback((signArea: SignArea | null) => {
     dispatch({ type: 'SET_SIGN_AREA', signArea });
   }, []);
 

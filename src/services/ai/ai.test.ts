@@ -68,24 +68,37 @@ describe('storefront image-edit architecture', () => {
     expect(prompt).not.toContain('unobtainium');
   });
 
-  it('describes a customer-marked sign area as explicit coordinates the model must respect', () => {
+  it('describes a customer-painted sign area as an indicative location, not an exact crop', () => {
     const prompt = buildStorefrontEditPrompt({
       ...configuration,
-      signArea: { xPercent: 10, yPercent: 15.4, widthPercent: 35.6, heightPercent: 12 },
+      signArea: { strokes: [{ points: [{ xPercent: 10, yPercent: 15.4 }, { xPercent: 45.6, yPercent: 27.4 }] }] },
     });
-    expect(prompt).toContain('10% from the left edge and 15% from the top edge');
-    expect(prompt).toContain('36% of the image width and 12% of the image height');
-    expect(prompt).toContain('strictly inside this marked rectangle');
-    expect(prompt).toContain('confident but strictly localized');
+    expect(prompt).toContain('centered at about (28%, 21%)');
+    expect(prompt).toContain('(10%, 15%) to (46%, 27%)');
+    expect(prompt).toContain('not an exact crop, mask or size');
+    expect(prompt).toContain('confident, natural localized');
+  });
+
+  it('spans every painted stroke, not just the first one, when describing the marked location', () => {
+    const prompt = buildStorefrontEditPrompt({
+      ...configuration,
+      signArea: {
+        strokes: [
+          { points: [{ xPercent: 10, yPercent: 10 }] },
+          { points: [{ xPercent: 50, yPercent: 30 }] },
+        ],
+      },
+    });
+    expect(prompt).toContain('(10%, 10%) to (50%, 30%)');
   });
 
   it('allows a marked area to be fully replaced when the customer flags existing surface', () => {
     const prompt = buildStorefrontEditPrompt({
       ...configuration,
-      signArea: { xPercent: 10, yPercent: 15, widthPercent: 35, heightPercent: 12 },
+      signArea: { strokes: [{ points: [{ xPercent: 10, yPercent: 15 }, { xPercent: 45, yPercent: 27 }] }] },
       replaceExistingSurface: true,
     });
-    expect(prompt).toContain('fully remove and replace whatever currently occupies the space');
+    expect(prompt).toContain('fully removed and replaced with one confident');
     expect(prompt).toContain('do not leave the old element partially visible');
   });
 

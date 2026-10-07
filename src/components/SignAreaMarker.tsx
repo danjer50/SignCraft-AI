@@ -1,39 +1,38 @@
 import { useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
-import { Eraser, MousePointerSquareDashed } from 'lucide-react';
+import { Eraser, Paintbrush2, Undo2 } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
 import { useProject } from '../context/ProjectContext';
-import type { SignAreaRect } from '../domain/sign';
+import { SIGN_AREA_MAX_POINTS_PER_STROKE, SIGN_AREA_MAX_STROKES, type SignAreaPoint, type SignAreaStroke } from '../domain/sign';
 import { SafeImage } from './SafeImage';
 
-interface DragPoint {
-  x: number;
-  y: number;
-}
+/** Ignore pointer jitter smaller than this (percent of the photo) before recording a new point. */
+const MIN_MOVE_PERCENT = 1.2;
 
 function clampPercent(value: number): number {
   return Math.min(100, Math.max(0, value));
 }
 
 /** Convert a pointer position into a percentage of the marker's own bounding box. */
-function percentFromPointer(event: ReactPointerEvent<HTMLDivElement>, bounds: DOMRect): DragPoint {
+function percentFromPointer(event: ReactPointerEvent<HTMLDivElement>, bounds: DOMRect): SignAreaPoint {
   return {
-    x: clampPercent(((event.clientX - bounds.left) / bounds.width) * 100),
-    y: clampPercent(((event.clientY - bounds.top) / bounds.height) * 100),
+    xPercent: clampPercent(((event.clientX - bounds.left) / bounds.width) * 100),
+    yPercent: clampPercent(((event.clientY - bounds.top) / bounds.height) * 100),
   };
 }
 
-function rectFromPoints(a: DragPoint, b: DragPoint): SignAreaRect {
-  const xPercent = Math.min(a.x, b.x);
-  const yPercent = Math.min(a.y, b.y);
-  const widthPercent = Math.max(1, Math.abs(a.x - b.x));
-  const heightPercent = Math.max(1, Math.abs(a.y - b.y));
-  return { xPercent, yPercent, widthPercent, heightPercent };
+/** SVG `points` attribute for one stroke; a single-point stroke is duplicated so a plain tap still draws a round dot. */
+function pointsAttribute(points: SignAreaPoint[]): string {
+  const drawn = points.length > 1 ? points : [...points, ...points];
+  return drawn.map((point) => `${point.xPercent},${point.yPercent}`).join(' ');
 }
 
 /**
- * Lets the customer draw, on the uploaded photo itself, exactly where the new sign should go.
- * This directly feeds `promptBuilder`'s location brief so the AI edits a specific marked area
- * instead of guessing from text alone. Touch, pen and mouse all use the same pointer handlers.
+ * Lets the customer paint, directly on the uploaded photo, roughly where the new sign should
+ * go — a free-form brush, not a single fixed rectangle. Every stroke is added on top of the
+ * previous ones (never restarting or replacing an existing mark), so the customer can build up
+ * as many marks as they need. This only feeds `promptBuilder` a general location (and, loosely,
+ * a sense of scale); the AI still decides the sign's actual size and shape at that spot. Touch,
+ * pen and mouse all use the same pointer handlers.
  */
 export function SignAreaMarker() {
   const { t } = useLanguage();
@@ -41,49 +40,60 @@ export function SignAreaMarker() {
   const photo = state.photo;
   const area = state.configuration.signArea;
   const containerRef = useRef<HTMLDivElement>(null);
-  const [dragStart, setDragStart] = useState<DragPoint | null>(null);
-  const [draftRect, setDraftRect] = useState<SignAreaRect | null>(null);
+  const [liveStroke, setLiveStroke] = useState<SignAreaPoint[] | null>(null);
 
   if (!photo) return null;
 
-  const activeRect = draftRect ?? area;
+  const strokes: SignAreaStroke[] = area?.strokes ?? [];
+  const hasMarks = strokes.length > 0;
+  const atStrokeLimit = strokes.length >= SIGN_AREA_MAX_STROKES;
 
   const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (atStrokeLimit) return;
     const bounds = containerRef.current?.getBoundingClientRect();
     if (!bounds) return;
     event.currentTarget.setPointerCapture(event.pointerId);
-    const point = percentFromPointer(event, bounds);
-    setDragStart(point);
-    setDraftRect({ xPercent: point.x, yPercent: point.y, widthPercent: 1, heightPercent: 1 });
+    setLiveStroke([percentFromPointer(event, bounds)]);
   };
 
   const handlePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (!dragStart) return;
+    if (!liveStroke) return;
+    if (liveStroke.length >= SIGN_AREA_MAX_POINTS_PER_STROKE) return;
     const bounds = containerRef.current?.getBoundingClientRect();
     if (!bounds) return;
     const point = percentFromPointer(event, bounds);
-    setDraftRect(rectFromPoints(dragStart, point));
+    const last = liveStroke[liveStroke.length - 1];
+    if (Math.hypot(point.xPercent - last.xPercent, point.yPercent - last.yPercent) < MIN_MOVE_PERCENT) return;
+    setLiveStroke([...liveStroke, point]);
   };
 
-  const finishDrag = () => {
-    if (dragStart && draftRect && draftRect.widthPercent >= 2 && draftRect.heightPercent >= 2) {
-      setSignArea(draftRect);
+  const finishStroke = () => {
+    if (liveStroke && liveStroke.length > 0) {
+      // A new stroke is always appended, never replacing the marks already painted — this is
+      // what lets the customer keep adding more shapes instead of losing the previous ones.
+      setSignArea({ strokes: [...strokes, { points: liveStroke }] });
     }
-    setDragStart(null);
-    setDraftRect(null);
+    setLiveStroke(null);
+  };
+
+  const undoLastStroke = () => {
+    if (strokes.length === 0) return;
+    const remaining = strokes.slice(0, -1);
+    setSignArea(remaining.length > 0 ? { strokes: remaining } : null);
   };
 
   const clearArea = () => {
     setSignArea(null);
     setReplaceExistingSurface(false);
-    setDragStart(null);
-    setDraftRect(null);
+    setLiveStroke(null);
   };
+
+  const visibleStrokes: SignAreaStroke[] = liveStroke ? [...strokes, { points: liveStroke }] : strokes;
 
   return (
     <div className="sign-area-marker">
       <div className="sign-area-marker-head">
-        <span className="sign-area-marker-icon"><MousePointerSquareDashed size={16} /></span>
+        <span className="sign-area-marker-icon"><Paintbrush2 size={16} /></span>
         <div>
           <strong>{t('studio.signAreaTitle')}</strong>
           <p>{t('studio.signAreaBody')}</p>
@@ -94,35 +104,36 @@ export function SignAreaMarker() {
         className="sign-area-canvas"
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
-        onPointerUp={finishDrag}
-        onPointerCancel={finishDrag}
+        onPointerUp={finishStroke}
+        onPointerCancel={finishStroke}
       >
         <SafeImage src={photo.previewUrl} alt={t('studio.signAreaPhotoAlt')} className="sign-area-photo" />
-        {activeRect && (
-          <div
-            className="sign-area-rect"
-            style={{
-              left: `${activeRect.xPercent}%`,
-              top: `${activeRect.yPercent}%`,
-              width: `${activeRect.widthPercent}%`,
-              height: `${activeRect.heightPercent}%`,
-            }}
-          />
+        {visibleStrokes.length > 0 && (
+          <svg className="sign-area-paint" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+            {visibleStrokes.map((stroke, index) => (
+              <polyline key={index} className="sign-area-stroke" points={pointsAttribute(stroke.points)} />
+            ))}
+          </svg>
         )}
-        {!activeRect && <div className="sign-area-hint">{t('studio.signAreaDragHint')}</div>}
+        {visibleStrokes.length === 0 && <div className="sign-area-hint">{t('studio.signAreaDragHint')}</div>}
       </div>
       <div className="sign-area-status">
-        <span className={`sign-area-badge${area ? ' is-set' : ''}`} data-testid="sign-area-badge">
+        <span className={`sign-area-badge${hasMarks ? ' is-set' : ''}`} data-testid="sign-area-badge">
           <span className="sign-area-badge-dot" />
-          {area ? t('studio.signAreaSet') : t('studio.signAreaNotSet')}
+          {hasMarks ? `${t('studio.signAreaSet')} · ${strokes.length}` : t('studio.signAreaNotSet')}
         </span>
-        {area && (
-          <button type="button" className="button button-quiet button-small" onClick={clearArea}>
-            <Eraser size={14} />{t('studio.signAreaClear')}
-          </button>
+        {hasMarks && (
+          <div className="sign-area-actions">
+            <button type="button" className="button button-quiet button-small" onClick={undoLastStroke}>
+              <Undo2 size={14} />{t('studio.signAreaUndo')}
+            </button>
+            <button type="button" className="button button-quiet button-small" onClick={clearArea}>
+              <Eraser size={14} />{t('studio.signAreaClear')}
+            </button>
+          </div>
         )}
       </div>
-      {area && (
+      {hasMarks && (
         <label className="sign-area-replace-toggle">
           <input
             type="checkbox"

@@ -9,6 +9,14 @@ import { readImageDimensions } from './imageDimensions.js';
 
 const MAX_AI_REQUEST_BODY_BYTES = 12 * 1024 * 1024;
 
+/**
+ * Upper bound on the serialized `SignConfiguration` JSON. Multi-stroke brush marking (capped at
+ * `SIGN_AREA_MAX_STROKES` strokes of `SIGN_AREA_MAX_POINTS_PER_STROKE` points each) needs more
+ * room than the old single-rectangle marker; this still rejects obviously malformed/oversized
+ * payloads well below the overall request body limit above.
+ */
+const MAX_CONFIGURATION_JSON_LENGTH = 50_000;
+
 function json(body: unknown, status: number): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -58,7 +66,7 @@ function parseMaterials(value: unknown): SignMaterial[] | null {
 }
 
 function parseConfiguration(value: FormDataEntryValue | null): SignConfiguration | null {
-  if (typeof value !== 'string' || value.length > 12_000) return null;
+  if (typeof value !== 'string' || value.length > MAX_CONFIGURATION_JSON_LENGTH) return null;
   try {
     const parsed: unknown = JSON.parse(value);
     if (!isRecord(parsed)) return null;

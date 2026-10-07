@@ -73,16 +73,46 @@ export type SignMaterial = (typeof SIGN_MATERIALS)[number];
 export const MAX_SIGN_MATERIALS = 6;
 
 /**
- * A customer-marked rectangle showing exactly where the sign belongs on the source photo.
- * All values are percentages (0-100) of the photo's own width/height, so the mark stays
- * correct no matter what resolution the photo is displayed or sent at.
+ * A single point of a customer-painted brush stroke, as a percentage (0-100) of the photo's
+ * own width/height, so the mark stays correct no matter what resolution the photo is
+ * displayed or sent at.
  */
-export interface SignAreaRect {
+export interface SignAreaPoint {
+  xPercent: number;
+  yPercent: number;
+}
+
+/** One continuous brush stroke (one touch/click drag) the customer painted on the photo. */
+export interface SignAreaStroke {
+  points: SignAreaPoint[];
+}
+
+/**
+ * The customer's painted sign-location marking: any number of brush strokes, each added one
+ * on top of another (never replacing the previous ones). This is only an indicator of WHERE
+ * the sign belongs, not an exact crop, mask or size — the AI still chooses a natural size and
+ * shape for the sign at that spot.
+ */
+export interface SignArea {
+  strokes: SignAreaStroke[];
+}
+
+/** A simple bounding summary of a `SignArea`, which is all the AI prompt actually needs. */
+export interface SignAreaBounds {
   xPercent: number;
   yPercent: number;
   widthPercent: number;
   heightPercent: number;
+  centerXPercent: number;
+  centerYPercent: number;
 }
+
+/**
+ * Generous but bounded caps on brush data so a customer can mark several spots in real detail
+ * while keeping the configuration payload small and predictable end to end.
+ */
+export const SIGN_AREA_MAX_STROKES = 15;
+export const SIGN_AREA_MAX_POINTS_PER_STROKE = 80;
 
 export interface SignConfiguration {
   businessName: string;
@@ -98,7 +128,7 @@ export interface SignConfiguration {
   heightCm: string;
   notes: string;
   /** Optional customer-marked placement; `null` means the AI must infer the best location. */
-  signArea: SignAreaRect | null;
+  signArea: SignArea | null;
   /** True when the marked area currently holds something (old sign, shutter, bars) to fully cover/replace. */
   replaceExistingSurface: boolean;
 }
@@ -141,21 +171,69 @@ function isFiniteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
 }
 
+function normalizeSignAreaPoint(value: unknown): SignAreaPoint | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const { xPercent, yPercent } = value as Partial<Record<keyof SignAreaPoint, unknown>>;
+  if (!isFiniteNumber(xPercent) || !isFiniteNumber(yPercent)) return null;
+  return { xPercent: Math.min(100, Math.max(0, xPercent)), yPercent: Math.min(100, Math.max(0, yPercent)) };
+}
+
 /**
  * Defensive recovery for a persisted/transmitted marked area: any missing, non-numeric or
- * out-of-range field discards the whole rectangle rather than rendering a broken overlay or
- * sending a nonsensical region to the AI prompt.
+ * out-of-range point is dropped individually (rather than discarding a whole legitimate stroke),
+ * an empty stroke is dropped entirely, and strokes/points are capped so neither a corrupted
+ * draft nor a tampered request can send an unbounded payload to the AI prompt.
  */
-export function normalizeSignArea(value: unknown): SignAreaRect | null {
+export function normalizeSignArea(value: unknown): SignArea | null {
   if (typeof value !== 'object' || value === null) return null;
-  const source = value as Partial<Record<keyof SignAreaRect, unknown>>;
-  const { xPercent, yPercent, widthPercent, heightPercent } = source;
-  if (![xPercent, yPercent, widthPercent, heightPercent].every(isFiniteNumber)) return null;
-  const x = Math.min(99, Math.max(0, xPercent as number));
-  const y = Math.min(99, Math.max(0, yPercent as number));
-  const width = Math.min(100 - x, Math.max(1, widthPercent as number));
-  const height = Math.min(100 - y, Math.max(1, heightPercent as number));
-  return { xPercent: x, yPercent: y, widthPercent: width, heightPercent: height };
+  const rawStrokes = (value as Partial<Record<'strokes', unknown>>).strokes;
+  if (!Array.isArray(rawStrokes)) return null;
+  const strokes: SignAreaStroke[] = [];
+  for (const rawStroke of rawStrokes) {
+    if (strokes.length >= SIGN_AREA_MAX_STROKES) break;
+    if (typeof rawStroke !== 'object' || rawStroke === null) continue;
+    const rawPoints = (rawStroke as Partial<Record<'points', unknown>>).points;
+    if (!Array.isArray(rawPoints)) continue;
+    const points: SignAreaPoint[] = [];
+    for (const rawPoint of rawPoints) {
+      if (points.length >= SIGN_AREA_MAX_POINTS_PER_STROKE) break;
+      const point = normalizeSignAreaPoint(rawPoint);
+      if (point) points.push(point);
+    }
+    if (points.length > 0) strokes.push({ points });
+  }
+  return strokes.length > 0 ? { strokes } : null;
+}
+
+/**
+ * Reduce a (possibly multi-stroke) painted area to the single bounding summary the AI prompt
+ * needs: the overall bounding box of every painted point, plus its centre point.
+ */
+export function computeSignAreaBounds(area: SignArea | null): SignAreaBounds | null {
+  if (!area) return null;
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const stroke of area.strokes) {
+    for (const point of stroke.points) {
+      minX = Math.min(minX, point.xPercent);
+      minY = Math.min(minY, point.yPercent);
+      maxX = Math.max(maxX, point.xPercent);
+      maxY = Math.max(maxY, point.yPercent);
+    }
+  }
+  if (!Number.isFinite(minX) || !Number.isFinite(minY) || !Number.isFinite(maxX) || !Number.isFinite(maxY)) {
+    return null;
+  }
+  return {
+    xPercent: minX,
+    yPercent: minY,
+    widthPercent: Math.max(1, maxX - minX),
+    heightPercent: Math.max(1, maxY - minY),
+    centerXPercent: (minX + maxX) / 2,
+    centerYPercent: (minY + maxY) / 2,
+  };
 }
 
 /**

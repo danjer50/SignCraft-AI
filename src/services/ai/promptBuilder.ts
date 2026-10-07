@@ -1,5 +1,5 @@
 import type { SignConfiguration, SignMaterial } from '../../domain/sign.js';
-import { normalizeMaterials } from '../../domain/sign.js';
+import { computeSignAreaBounds, normalizeMaterials } from '../../domain/sign.js';
 
 export const SIGNCRAFT_PROMPT_VERSION = 'storefront-inpaint-v3';
 
@@ -46,27 +46,29 @@ const materialDescriptions: Record<SignMaterial, string> = {
 const NO_MATERIAL_BRIEF = 'No specific material was requested yet; use one professionally plausible material for this sign type without inventing branded products.';
 
 /**
- * Translate the customer's drawn rectangle (percentages of the source photo) into an explicit
- * location brief, and state plainly whether the marked spot must be fully replaced (e.g. an old
- * sign, a shutter or security bars) rather than only receiving a small localized addition.
+ * Translate the customer's painted brush marks (percentages of the source photo) into an
+ * explicit but non-prescriptive location brief, and state plainly whether the marked spot must
+ * be fully replaced (e.g. an old sign, a shutter or security bars) rather than only receiving a
+ * small localized addition. The painted marks indicate WHERE the sign goes, never its exact
+ * size or shape: the model must still choose believable proportions for a real sign there.
  */
 function describeSignPlacement(configuration: SignConfiguration): string {
-  const area = configuration.signArea;
-  if (!area) {
+  const bounds = computeSignAreaBounds(configuration.signArea);
+  if (!bounds) {
     return configuration.replaceExistingSurface
       ? 'The customer indicates the intended sign area currently holds something that should be fully covered or replaced (for example old signage, a shutter or security bars). Still make only a localized change limited to the general sign area; keep the rest of the facade untouched.'
       : '';
   }
-  const left = Math.round(area.xPercent);
-  const top = Math.round(area.yPercent);
-  const width = Math.round(area.widthPercent);
-  const height = Math.round(area.heightPercent);
-  const right = Math.min(100, left + width);
-  const bottom = Math.min(100, top + height);
-  const placement = `The customer marked the exact sign area on the source photo: a rectangle starting about ${left}% from the left edge and ${top}% from the top edge of the image, spanning roughly ${width}% of the image width and ${height}% of the image height (approximately from (${left}%, ${top}%) to (${right}%, ${bottom}%) of the frame). Keep every change strictly inside this marked rectangle; everything outside it must remain pixel-identical to the source photo.`;
+  const centerX = Math.round(bounds.centerXPercent);
+  const centerY = Math.round(bounds.centerYPercent);
+  const left = Math.round(bounds.xPercent);
+  const top = Math.round(bounds.yPercent);
+  const right = Math.min(100, Math.round(bounds.xPercent + bounds.widthPercent));
+  const bottom = Math.min(100, Math.round(bounds.yPercent + bounds.heightPercent));
+  const placement = `The customer painted a mark on the source photo to show roughly WHERE the sign belongs, centered at about (${centerX}%, ${centerY}%) of the image, within a general zone spanning approximately (${left}%, ${top}%) to (${right}%, ${bottom}%) of the frame. This mark is only a location indicator, not an exact crop, mask or size: do not crop, letterbox or force the sign to fill exactly this painted shape. Instead, place one sign naturally at that facade location, choosing realistic proportions and scale for that spot and sign type, the way a real sign would actually be mounted there. Keep the change generally limited to that area and its immediate surroundings; everything well outside it should remain close to the source photo.`;
   const coverage = configuration.replaceExistingSurface
-    ? ' Within that marked rectangle only, fully remove and replace whatever currently occupies the space (for example an old sign, a shutter, security bars or a blank wall) with one confident, complete, professionally fabricated sign that fills the marked area appropriately; do not leave the old element partially visible.'
-    : ' Add the new sign within that marked rectangle.';
+    ? ' Whatever currently occupies that general location (for example an old sign, a shutter, security bars or a blank wall) must be fully removed and replaced with one confident, complete, professionally fabricated sign; do not leave the old element partially visible.'
+    : ' Add the new sign at that general location.';
   return placement + coverage;
 }
 
@@ -87,7 +89,7 @@ export function buildStorefrontEditPrompt(configuration: SignConfiguration): str
   return [
     'STOREFRONT SIGN IMAGE EDIT. Use input image 0 as the real source photograph, not merely as a style reference. Produce one edited version of that same photograph.',
     configuration.signArea
-      ? 'Make a confident but strictly localized inpainting-style change limited only to the marked sign area described below. Add one professional sign physically attached to the facade in that exact area; do not redesign, repaint or alter any other part of the storefront.'
+      ? 'Make a confident, natural localized inpainting-style change at the customer-marked sign location described below. Add one professional sign physically attached to the facade at that location, sized and shaped the way a real sign would be there; do not redesign, repaint or alter unrelated parts of the storefront.'
       : 'Make the smallest possible localized inpainting-style change, primarily within the existing sign fascia or intended sign area. Add one professional sign physically attached to the facade; do not redesign or repaint the storefront.',
     'Preserve the original building and every surrounding element as closely as possible: facade, walls, doors, windows, street, roofline, pavement, neighboring buildings, landscaping and objects. Preserve the exact original camera viewpoint, perspective, crop, vanishing lines and scene lighting.',
     describeSignPlacement(configuration),

@@ -22,7 +22,7 @@ function Probe() {
       <button type="button" onClick={() => toggleMaterial('ledModules')}>toggle-led</button>
       <button type="button" onClick={() => setStep(99)}>step-99</button>
       <button type="button" onClick={resetProject}>reset</button>
-      <button type="button" onClick={() => setSignArea({ xPercent: 10, yPercent: 20, widthPercent: 30, heightPercent: 15 })}>mark-area</button>
+      <button type="button" onClick={() => setSignArea({ strokes: [{ points: [{ xPercent: 10, yPercent: 20 }, { xPercent: 40, yPercent: 35 }] }] })}>mark-area</button>
       <button type="button" onClick={() => setSignArea(null)}>clear-area</button>
       <button type="button" onClick={() => setReplaceExistingSurface(true)}>flag-replace</button>
       <button type="button" onClick={removePhoto}>remove-photo</button>
@@ -137,6 +137,7 @@ describe('project draft persistence and recovery', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'mark-area' }));
     expect(screen.getByTestId('sign-area')).toHaveTextContent('"xPercent":10');
+    expect(screen.getByTestId('sign-area')).toHaveTextContent('"strokes"');
 
     fireEvent.click(screen.getByRole('button', { name: 'flag-replace' }));
     expect(screen.getByTestId('replace-surface')).toHaveTextContent('true');

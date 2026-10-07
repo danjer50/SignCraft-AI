@@ -157,7 +157,7 @@ describe('server API safety defaults', () => {
       const image = new File([jpegFixture()], 'front.jpg', { type: 'image/jpeg' });
       const response = await handleAiGeneration(
         makeAiRequest(image, {
-          signArea: { xPercent: 12, yPercent: 8, widthPercent: 40, heightPercent: 20 },
+          signArea: { strokes: [{ points: [{ xPercent: 12, yPercent: 8 }, { xPercent: 52, yPercent: 28 }] }] },
           replaceExistingSurface: true,
         }),
         {
@@ -169,8 +169,8 @@ describe('server API safety defaults', () => {
       const prompt = (fetchMock.mock.calls[0][1]?.body as FormData).get('prompt');
 
       expect(response.status).toBe(200);
-      expect(prompt).toContain('12% from the left edge and 8% from the top edge');
-      expect(prompt).toContain('fully remove and replace whatever currently occupies the space');
+      expect(prompt).toContain('centered at about (32%, 18%)');
+      expect(prompt).toContain('fully removed and replaced with one confident');
     } finally {
       vi.unstubAllGlobals();
     }
@@ -182,7 +182,7 @@ describe('server API safety defaults', () => {
     try {
       const image = new File([jpegFixture()], 'front.jpg', { type: 'image/jpeg' });
       const response = await handleAiGeneration(
-        makeAiRequest(image, { signArea: { xPercent: 'left', yPercent: 8 } }),
+        makeAiRequest(image, { signArea: { strokes: [{ points: [{ xPercent: 'left', yPercent: 8 }] }] } }),
         { AI_PROVIDER: 'demo' },
       );
       expect(response.status).toBe(503);
