@@ -30,10 +30,21 @@ async function drawToJpegFile(source: CanvasImageSource, size: Dimensions, lastM
   return new File([compressed], 'storefront.jpg', { type: 'image/jpeg', lastModified });
 }
 
-/** Primary method: decode the full-resolution bitmap, then downscale it onto a small canvas. */
+/**
+ * Upper bound used only to cap how large a bitmap `createImageBitmap` ever has to materialize in
+ * memory. Modern phone cameras can produce images tens of megapixels wide; decoding one of those
+ * at full native resolution just to immediately throw it away after a canvas downscale is a
+ * plausible cause of "preparation failed" on low-memory Android devices. This value is a
+ * generous ceiling (every realistic storefront photo ends up far smaller than this on its longer
+ * side already, long before the final `MAX_AI_IMAGE_SIDE` downscale), chosen so it only ever
+ * kicks in for the oversized photos that are actually at OOM risk.
+ */
+const PRE_DECODE_MAX_SIDE = 2048;
+
+/** Primary method: decode the bitmap (capped during decode to bound memory use), then downscale it onto a small canvas. */
 async function prepareViaImageBitmap(source: File): Promise<File> {
   if (typeof createImageBitmap !== 'function') throw new Error('createImageBitmap is not supported in this browser.');
-  const bitmap = await createImageBitmap(source, { imageOrientation: 'from-image' });
+  const bitmap = await createImageBitmap(source, { imageOrientation: 'from-image', resizeWidth: PRE_DECODE_MAX_SIDE, resizeQuality: 'medium' });
   try {
     if (!bitmap.width || !bitmap.height) throw new Error('The source image has invalid dimensions.');
     return await drawToJpegFile(bitmap, scaledSize(bitmap), source.lastModified);
@@ -41,6 +52,7 @@ async function prepareViaImageBitmap(source: File): Promise<File> {
     bitmap.close();
   }
 }
+
 
 /**
  * Fallback method, tried only if the primary one fails: decode through a plain `<img>` element

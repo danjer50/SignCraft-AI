@@ -99,6 +99,20 @@ describe('Cloudflare reference-image preparation', () => {
     static dimensions = { width: 0, height: 0 };
   }
 
+  it('asks createImageBitmap to cap decode size, to avoid decoding huge camera photos at full resolution', async () => {
+    const source = new File(['original photo'], 'facade.jpg', { type: 'image/jpeg' });
+    const bitmap = { width: 2048, height: 1536, close: vi.fn() } as unknown as ImageBitmap;
+    const createImageBitmapMock = vi.fn(async () => bitmap);
+    vi.stubGlobal('createImageBitmap', createImageBitmapMock);
+    const canvas = mockCanvas(() => {});
+    const createElement = document.createElement.bind(document);
+    vi.spyOn(document, 'createElement').mockImplementation((tagName, options) => tagName === 'canvas' ? canvas : createElement(tagName, options));
+
+    await prepareCloudflareReferenceImage(source);
+
+    expect(createImageBitmapMock).toHaveBeenCalledWith(source, expect.objectContaining({ resizeWidth: expect.any(Number) }));
+  });
+
   it('falls back to decoding through an <img> element when createImageBitmap fails', async () => {
     const source = new File(['original photo'], 'facade.jpg', { type: 'image/jpeg', lastModified: 456 });
     vi.stubGlobal('createImageBitmap', vi.fn(async () => { throw new Error('createImageBitmap rejected this file'); }));
