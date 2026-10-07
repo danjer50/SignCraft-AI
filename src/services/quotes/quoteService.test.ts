@@ -21,6 +21,8 @@ const sampleRequest: QuoteRequest = {
     widthCm: '120',
     heightCm: '60',
     notes: 'Keep the stone facade unchanged.',
+    signArea: null,
+    replaceExistingSurface: false,
   },
   imageReference: { fileName: 'facade.jpg', mimeType: 'image/jpeg', sizeBytes: 1024, transferState: 'LOCAL_ONLY' },
   conceptReference: { status: 'UNAVAILABLE', providerId: 'demo-unconfigured', message: 'No provider configured.' },

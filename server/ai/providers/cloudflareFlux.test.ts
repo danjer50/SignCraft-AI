@@ -18,6 +18,8 @@ const configuration: SignConfiguration = {
   widthCm: '320',
   heightCm: '80',
   notes: 'Preserve the stone arch.',
+  signArea: null,
+  replaceExistingSurface: false,
 };
 
 function jpegFixture(width = 511, height = 287): Uint8Array {

@@ -20,6 +20,7 @@ import { useLanguage } from '../context/LanguageContext';
 import { useProject } from '../context/ProjectContext';
 import { Seo } from '../components/Seo';
 import { PhotoUploadField } from '../components/PhotoUploadField';
+import { SignAreaMarker } from '../components/SignAreaMarker';
 import { MaterialPicker } from '../components/MaterialPicker';
 import { SignTypeArt } from '../components/SignTypeArt';
 import { StyleArt } from '../components/StyleArt';
@@ -211,6 +212,7 @@ export function StudioPage() {
                     </div>
                   )}
                   <PhotoUploadField />
+                  {state.photo?.file && <SignAreaMarker />}
                 </div>
               )}
 

@@ -1,4 +1,4 @@
-import { BUSINESS_CATEGORIES, LIGHTING_TYPES, MAX_SIGN_MATERIALS, SIGN_STYLES, SIGN_TYPES, isSignMaterial, type SignConfiguration, type SignMaterial } from '../../src/domain/sign.js';
+import { BUSINESS_CATEGORIES, LIGHTING_TYPES, MAX_SIGN_MATERIALS, SIGN_STYLES, SIGN_TYPES, isSignMaterial, normalizeSignArea, type SignConfiguration, type SignMaterial } from '../../src/domain/sign.js';
 import { MAX_STOREFRONT_IMAGE_BYTES, ACCEPTED_IMAGE_TYPES } from '../../src/services/upload.js';
 import { MAX_AI_IMAGE_SIDE } from '../../src/services/ai/contracts.js';
 import { buildStorefrontEditPrompt, SIGNCRAFT_PROMPT_VERSION } from '../../src/services/ai/promptBuilder.js';
@@ -89,6 +89,10 @@ function parseConfiguration(value: FormDataEntryValue | null): SignConfiguration
       widthCm: parsed.widthCm as string,
       heightCm: parsed.heightCm as string,
       notes: parsed.notes as string,
+      // Optional customer-marked placement: a missing or malformed value never rejects the
+      // whole request, it simply falls back to letting the AI infer the best location.
+      signArea: normalizeSignArea(parsed.signArea),
+      replaceExistingSurface: parsed.replaceExistingSurface === true,
     };
   } catch {
     return null;

@@ -68,6 +68,38 @@ describe('storefront image-edit architecture', () => {
     expect(prompt).not.toContain('unobtainium');
   });
 
+  it('describes a customer-marked sign area as explicit coordinates the model must respect', () => {
+    const prompt = buildStorefrontEditPrompt({
+      ...configuration,
+      signArea: { xPercent: 10, yPercent: 15.4, widthPercent: 35.6, heightPercent: 12 },
+    });
+    expect(prompt).toContain('10% from the left edge and 15% from the top edge');
+    expect(prompt).toContain('36% of the image width and 12% of the image height');
+    expect(prompt).toContain('strictly inside this marked rectangle');
+    expect(prompt).toContain('confident but strictly localized');
+  });
+
+  it('allows a marked area to be fully replaced when the customer flags existing surface', () => {
+    const prompt = buildStorefrontEditPrompt({
+      ...configuration,
+      signArea: { xPercent: 10, yPercent: 15, widthPercent: 35, heightPercent: 12 },
+      replaceExistingSurface: true,
+    });
+    expect(prompt).toContain('fully remove and replace whatever currently occupies the space');
+    expect(prompt).toContain('do not leave the old element partially visible');
+  });
+
+  it('keeps the default conservative instruction when no area was marked', () => {
+    const prompt = buildStorefrontEditPrompt(configuration);
+    expect(prompt).toContain('smallest possible localized inpainting-style change');
+    expect(prompt).not.toContain('marked sign area');
+  });
+
+  it('still asks for a localized change even when "replace existing surface" is set without a marked area', () => {
+    const prompt = buildStorefrontEditPrompt({ ...configuration, replaceExistingSurface: true });
+    expect(prompt).toContain('currently holds something that should be fully covered or replaced');
+  });
+
   it('preserves exact sign text including intentional surrounding whitespace', () => {
     const exactText = '  Atelier Sable · حرف  ';
     expect(buildStorefrontEditPrompt({ ...configuration, exactText })).toContain(`Exact sign wording and character order: “${exactText}”.`);

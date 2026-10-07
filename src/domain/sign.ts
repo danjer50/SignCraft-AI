@@ -72,6 +72,18 @@ export type SignMaterial = (typeof SIGN_MATERIALS)[number];
 /** Upper bound for one sign; it keeps prompts, quotes and storage predictable. */
 export const MAX_SIGN_MATERIALS = 6;
 
+/**
+ * A customer-marked rectangle showing exactly where the sign belongs on the source photo.
+ * All values are percentages (0-100) of the photo's own width/height, so the mark stays
+ * correct no matter what resolution the photo is displayed or sent at.
+ */
+export interface SignAreaRect {
+  xPercent: number;
+  yPercent: number;
+  widthPercent: number;
+  heightPercent: number;
+}
+
 export interface SignConfiguration {
   businessName: string;
   category: BusinessCategory;
@@ -85,6 +97,10 @@ export interface SignConfiguration {
   widthCm: string;
   heightCm: string;
   notes: string;
+  /** Optional customer-marked placement; `null` means the AI must infer the best location. */
+  signArea: SignAreaRect | null;
+  /** True when the marked area currently holds something (old sign, shutter, bars) to fully cover/replace. */
+  replaceExistingSurface: boolean;
 }
 
 /** Configuration keys whose value is a single string; `materials` is handled separately. */
@@ -121,6 +137,27 @@ function pickString(value: unknown, maximum: number): string {
   return typeof value === 'string' ? value.slice(0, maximum) : '';
 }
 
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+/**
+ * Defensive recovery for a persisted/transmitted marked area: any missing, non-numeric or
+ * out-of-range field discards the whole rectangle rather than rendering a broken overlay or
+ * sending a nonsensical region to the AI prompt.
+ */
+export function normalizeSignArea(value: unknown): SignAreaRect | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const source = value as Partial<Record<keyof SignAreaRect, unknown>>;
+  const { xPercent, yPercent, widthPercent, heightPercent } = source;
+  if (![xPercent, yPercent, widthPercent, heightPercent].every(isFiniteNumber)) return null;
+  const x = Math.min(99, Math.max(0, xPercent as number));
+  const y = Math.min(99, Math.max(0, yPercent as number));
+  const width = Math.min(100 - x, Math.max(1, widthPercent as number));
+  const height = Math.min(100 - y, Math.max(1, heightPercent as number));
+  return { xPercent: x, yPercent: y, widthPercent: width, heightPercent: height };
+}
+
 /**
  * Defensive configuration recovery. Every field is validated against its enum/limits so a
  * corrupted or older persisted draft can never crash a page; unknown values fall back to
@@ -146,6 +183,8 @@ export function normalizeSignConfiguration(value: unknown): SignConfiguration {
     widthCm: pickString(source.widthCm, 12),
     heightCm: pickString(source.heightCm, 12),
     notes: pickString(source.notes, 2_000),
+    signArea: normalizeSignArea(source.signArea),
+    replaceExistingSurface: typeof source.replaceExistingSurface === 'boolean' ? source.replaceExistingSurface : false,
   };
 }
 
@@ -285,4 +324,6 @@ export const DEFAULT_SIGN_CONFIGURATION: SignConfiguration = {
   widthCm: '',
   heightCm: '',
   notes: '',
+  signArea: null,
+  replaceExistingSurface: false,
 };

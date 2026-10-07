@@ -569,6 +569,23 @@ p { color: var(--muted); }
 .uploaded-photo-image { position: relative; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: var(--bg-0); box-shadow: var(--shadow-soft); }
 .uploaded-photo-image img { width: 100%; max-height: 340px; object-fit: cover; }
 .photo-busy { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(8, 10, 12, .55); color: var(--warm); }
+
+.sign-area-marker { display: grid; gap: 12px; margin-top: 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); padding: 14px; }
+.sign-area-marker-head { display: flex; align-items: flex-start; gap: 10px; }
+.sign-area-marker-icon { display: grid; place-items: center; width: 30px; height: 30px; flex: 0 0 auto; border-radius: 9px; background: var(--accent-pale); color: var(--accent); }
+.sign-area-marker-head strong { color: var(--ink); font-size: 13px; font-weight: 700; }
+.sign-area-marker-head p { margin: 3px 0 0; color: var(--muted); font-size: 11.5px; line-height: 1.55; }
+.sign-area-canvas { position: relative; display: block; width: 100%; line-height: 0; border-radius: 12px; overflow: hidden; border: 1px solid var(--line); background: var(--bg-0); cursor: crosshair; touch-action: none; }
+.sign-area-canvas img { display: block; width: 100%; height: auto; user-select: none; -webkit-user-drag: none; pointer-events: none; }
+.sign-area-rect { position: absolute; border: 2px dashed var(--accent); background: rgba(242, 184, 120, .22); border-radius: 4px; box-shadow: 0 0 0 1px rgba(10, 13, 16, .4); pointer-events: none; }
+.sign-area-hint { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 0 20px; color: var(--ink-soft); font-size: 11.5px; font-weight: 600; background: linear-gradient(180deg, rgba(8, 10, 12, 0), rgba(8, 10, 12, .35)); pointer-events: none; }
+.sign-area-status { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.sign-area-badge { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-size: 11px; font-weight: 600; }
+.sign-area-badge-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted-2); }
+.sign-area-badge.is-set { color: var(--ink-soft); }
+.sign-area-badge.is-set .sign-area-badge-dot { background: var(--accent); box-shadow: 0 0 10px rgba(242, 184, 120, .5); }
+.sign-area-replace-toggle { display: flex; align-items: flex-start; gap: 10px; color: var(--muted); font-size: 11.5px; line-height: 1.55; border-top: 1px solid var(--line); padding-top: 12px; cursor: pointer; }
+.sign-area-replace-toggle input { margin-top: 3px; flex: 0 0 auto; }
 .uploaded-photo-details { display: flex; align-items: center; gap: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); padding: 10px 14px; }
 .uploaded-photo-copy { display: grid; gap: 3px; min-width: 0; flex: 1; }
 .uploaded-photo-copy strong { color: var(--ink-soft); font-size: 12px; overflow-wrap: anywhere; }

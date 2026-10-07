@@ -6,7 +6,7 @@ import { CUSTOMER_FLOW_STEP_COUNT } from '../domain/customerFlow';
 import { DEFAULT_SIGN_CONFIGURATION, MAX_SIGN_MATERIALS } from '../domain/sign';
 
 function Probe() {
-  const { state, toggleMaterial, setStep, resetProject } = useProject();
+  const { state, toggleMaterial, setStep, resetProject, setSignArea, setReplaceExistingSurface, removePhoto } = useProject();
   return (
     <div>
       <span data-testid="step">{state.step}</span>
@@ -16,10 +16,16 @@ function Probe() {
       <span data-testid="concept">{state.lastConcept ? `${state.lastConcept.status}:${state.lastConcept.providerId}` : 'none'}</span>
       <span data-testid="photo">{state.photo ? `${state.photo.fileName}:${state.photo.file ? 'file' : 'preview-only'}` : 'none'}</span>
       <span data-testid="restored">{String(state.restoredFromDraft)}</span>
+      <span data-testid="sign-area">{state.configuration.signArea ? JSON.stringify(state.configuration.signArea) : 'none'}</span>
+      <span data-testid="replace-surface">{String(state.configuration.replaceExistingSurface)}</span>
       <button type="button" onClick={() => toggleMaterial('acrylic')}>toggle-acrylic</button>
       <button type="button" onClick={() => toggleMaterial('ledModules')}>toggle-led</button>
       <button type="button" onClick={() => setStep(99)}>step-99</button>
       <button type="button" onClick={resetProject}>reset</button>
+      <button type="button" onClick={() => setSignArea({ xPercent: 10, yPercent: 20, widthPercent: 30, heightPercent: 15 })}>mark-area</button>
+      <button type="button" onClick={() => setSignArea(null)}>clear-area</button>
+      <button type="button" onClick={() => setReplaceExistingSurface(true)}>flag-replace</button>
+      <button type="button" onClick={removePhoto}>remove-photo</button>
     </div>
   );
 }
@@ -121,6 +127,34 @@ describe('project draft persistence and recovery', () => {
     expect(screen.getByTestId('step')).toHaveTextContent('1');
     expect(screen.getByTestId('materials').textContent).toBe('');
     expect(screen.getByTestId('restored')).toHaveTextContent('false');
+  });
+
+  it('marks and clears a sign area, and tracks the replace-existing-surface flag', () => {
+    renderProbe();
+
+    expect(screen.getByTestId('sign-area')).toHaveTextContent('none');
+    expect(screen.getByTestId('replace-surface')).toHaveTextContent('false');
+
+    fireEvent.click(screen.getByRole('button', { name: 'mark-area' }));
+    expect(screen.getByTestId('sign-area')).toHaveTextContent('"xPercent":10');
+
+    fireEvent.click(screen.getByRole('button', { name: 'flag-replace' }));
+    expect(screen.getByTestId('replace-surface')).toHaveTextContent('true');
+
+    fireEvent.click(screen.getByRole('button', { name: 'clear-area' }));
+    expect(screen.getByTestId('sign-area')).toHaveTextContent('none');
+  });
+
+  it('drops a marked sign area when the photo is removed, since it no longer applies', () => {
+    renderProbe();
+
+    fireEvent.click(screen.getByRole('button', { name: 'mark-area' }));
+    fireEvent.click(screen.getByRole('button', { name: 'flag-replace' }));
+    expect(screen.getByTestId('sign-area')).not.toHaveTextContent('none');
+
+    fireEvent.click(screen.getByRole('button', { name: 'remove-photo' }));
+    expect(screen.getByTestId('sign-area')).toHaveTextContent('none');
+    expect(screen.getByTestId('replace-surface')).toHaveTextContent('false');
   });
 
   it('keeps the wizard usable when the browser refuses storage', () => {

@@ -147,6 +147,51 @@ describe('server API safety defaults', () => {
     }
   });
 
+  it('forwards a customer-marked sign area into the provider prompt as explicit coordinates', async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify({ success: true, result: { image: Buffer.from(tinyPng).toString('base64') } }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      const image = new File([jpegFixture()], 'front.jpg', { type: 'image/jpeg' });
+      const response = await handleAiGeneration(
+        makeAiRequest(image, {
+          signArea: { xPercent: 12, yPercent: 8, widthPercent: 40, heightPercent: 20 },
+          replaceExistingSurface: true,
+        }),
+        {
+          AI_PROVIDER: 'cloudflare-flux',
+          CLOUDFLARE_ACCOUNT_ID: '0123456789abcdef0123456789abcdef',
+          CLOUDFLARE_API_TOKEN: 'test-only-token-never-real',
+        },
+      );
+      const prompt = (fetchMock.mock.calls[0][1]?.body as FormData).get('prompt');
+
+      expect(response.status).toBe(200);
+      expect(prompt).toContain('12% from the left edge and 8% from the top edge');
+      expect(prompt).toContain('fully remove and replace whatever currently occupies the space');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('ignores a malformed sign area instead of rejecting the whole request', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      const image = new File([jpegFixture()], 'front.jpg', { type: 'image/jpeg' });
+      const response = await handleAiGeneration(
+        makeAiRequest(image, { signArea: { xPercent: 'left', yPercent: 8 } }),
+        { AI_PROVIDER: 'demo' },
+      );
+      expect(response.status).toBe(503);
+      expect((await response.json()).status).toBe('UNAVAILABLE');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('accepts several materials for one sign and forwards them to the provider prompt', async () => {
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify({ success: true, result: { image: Buffer.from(tinyPng).toString('base64') } }), {
       status: 200,

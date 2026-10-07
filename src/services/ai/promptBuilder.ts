@@ -45,6 +45,31 @@ const materialDescriptions: Record<SignMaterial, string> = {
 
 const NO_MATERIAL_BRIEF = 'No specific material was requested yet; use one professionally plausible material for this sign type without inventing branded products.';
 
+/**
+ * Translate the customer's drawn rectangle (percentages of the source photo) into an explicit
+ * location brief, and state plainly whether the marked spot must be fully replaced (e.g. an old
+ * sign, a shutter or security bars) rather than only receiving a small localized addition.
+ */
+function describeSignPlacement(configuration: SignConfiguration): string {
+  const area = configuration.signArea;
+  if (!area) {
+    return configuration.replaceExistingSurface
+      ? 'The customer indicates the intended sign area currently holds something that should be fully covered or replaced (for example old signage, a shutter or security bars). Still make only a localized change limited to the general sign area; keep the rest of the facade untouched.'
+      : '';
+  }
+  const left = Math.round(area.xPercent);
+  const top = Math.round(area.yPercent);
+  const width = Math.round(area.widthPercent);
+  const height = Math.round(area.heightPercent);
+  const right = Math.min(100, left + width);
+  const bottom = Math.min(100, top + height);
+  const placement = `The customer marked the exact sign area on the source photo: a rectangle starting about ${left}% from the left edge and ${top}% from the top edge of the image, spanning roughly ${width}% of the image width and ${height}% of the image height (approximately from (${left}%, ${top}%) to (${right}%, ${bottom}%) of the frame). Keep every change strictly inside this marked rectangle; everything outside it must remain pixel-identical to the source photo.`;
+  const coverage = configuration.replaceExistingSurface
+    ? ' Within that marked rectangle only, fully remove and replace whatever currently occupies the space (for example an old sign, a shutter, security bars or a blank wall) with one confident, complete, professionally fabricated sign that fills the marked area appropriately; do not leave the old element partially visible.'
+    : ' Add the new sign within that marked rectangle.';
+  return placement + coverage;
+}
+
 /** Materials in the customer's own priority order, phrased so several can be combined on one sign. */
 export function describeRequestedMaterials(materials: readonly SignMaterial[]): string {
   const selected = normalizeMaterials(materials);
@@ -61,8 +86,11 @@ export function buildStorefrontEditPrompt(configuration: SignConfiguration): str
   const notes = configuration.notes.trim();
   return [
     'STOREFRONT SIGN IMAGE EDIT. Use input image 0 as the real source photograph, not merely as a style reference. Produce one edited version of that same photograph.',
-    'Make the smallest possible localized inpainting-style change, primarily within the existing sign fascia or intended sign area. Add one professional sign physically attached to the facade; do not redesign or repaint the storefront.',
+    configuration.signArea
+      ? 'Make a confident but strictly localized inpainting-style change limited only to the marked sign area described below. Add one professional sign physically attached to the facade in that exact area; do not redesign, repaint or alter any other part of the storefront.'
+      : 'Make the smallest possible localized inpainting-style change, primarily within the existing sign fascia or intended sign area. Add one professional sign physically attached to the facade; do not redesign or repaint the storefront.',
     'Preserve the original building and every surrounding element as closely as possible: facade, walls, doors, windows, street, roofline, pavement, neighboring buildings, landscaping and objects. Preserve the exact original camera viewpoint, perspective, crop, vanishing lines and scene lighting.',
+    describeSignPlacement(configuration),
     `Create one sign using ${signDescriptions[configuration.signType]} for a ${configuration.category} business, with a ${styleDescriptions[configuration.style]} visual direction.`,
     describeRequestedMaterials(configuration.materials),
     `Requested business name: “${configuration.businessName.trim()}”. Exact sign wording and character order: “${exactText}”. Do not add slogans, extra words, logos, duplicate signs or invented lettering. The model's lettering is only an approximation; structured exact text and the separate SVG/HTML typography proof remain authoritative for spelling.`,

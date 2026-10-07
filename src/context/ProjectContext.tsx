@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, type ReactNode } from 'react';
 import type {
   AIConceptResult,
+  SignAreaRect,
   SignConfiguration,
   SignMaterial,
   StringConfigurationKey,
@@ -27,6 +28,8 @@ type ProjectAction =
   | { type: 'SET_MATERIALS'; materials: SignMaterial[] }
   | { type: 'TOGGLE_MATERIAL'; material: SignMaterial }
   | { type: 'SET_PHOTO'; photo: UploadedStorefrontPhoto | null }
+  | { type: 'SET_SIGN_AREA'; signArea: SignAreaRect | null }
+  | { type: 'SET_REPLACE_EXISTING_SURFACE'; value: boolean }
   | { type: 'SET_CONCEPT'; concept: AIConceptResult | null }
   | { type: 'SET_STEP'; step: number }
   | { type: 'RESET' };
@@ -40,6 +43,8 @@ interface ProjectContextValue {
   setStep: (step: number) => void;
   setPhotoFile: (file: File) => Promise<void>;
   removePhoto: () => void;
+  setSignArea: (signArea: SignAreaRect | null) => void;
+  setReplaceExistingSurface: (value: boolean) => void;
   setConcept: (concept: AIConceptResult | null) => void;
   resetProject: () => void;
 }
@@ -129,7 +134,19 @@ function reducer(state: ProjectState, action: ProjectAction): ProjectState {
         },
       };
     case 'SET_PHOTO':
-      return { ...state, photo: action.photo, lastConcept: null, restoredFromDraft: action.photo ? false : state.restoredFromDraft };
+      // A new or removed photo invalidates any previously marked sign area: it was drawn
+      // against a different image and would silently point at the wrong spot otherwise.
+      return {
+        ...state,
+        photo: action.photo,
+        lastConcept: null,
+        restoredFromDraft: action.photo ? false : state.restoredFromDraft,
+        configuration: { ...state.configuration, signArea: null, replaceExistingSurface: false },
+      };
+    case 'SET_SIGN_AREA':
+      return { ...state, configuration: { ...state.configuration, signArea: action.signArea } };
+    case 'SET_REPLACE_EXISTING_SURFACE':
+      return { ...state, configuration: { ...state.configuration, replaceExistingSurface: action.value } };
     case 'SET_CONCEPT':
       return { ...state, lastConcept: action.concept };
     case 'SET_STEP':
@@ -213,6 +230,14 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     dispatch({ type: 'SET_PHOTO', photo: null });
   }, [releaseOldPreview]);
 
+  const setSignArea = useCallback((signArea: SignAreaRect | null) => {
+    dispatch({ type: 'SET_SIGN_AREA', signArea });
+  }, []);
+
+  const setReplaceExistingSurface = useCallback((value: boolean) => {
+    dispatch({ type: 'SET_REPLACE_EXISTING_SURFACE', value });
+  }, []);
+
   const setConcept = useCallback((concept: AIConceptResult | null) => {
     dispatch({ type: 'SET_CONCEPT', concept });
   }, []);
@@ -231,9 +256,23 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     setStep,
     setPhotoFile,
     removePhoto,
+    setSignArea,
+    setReplaceExistingSurface,
     setConcept,
     resetProject,
-  }), [state, updateConfiguration, setMaterials, toggleMaterial, setStep, setPhotoFile, removePhoto, setConcept, resetProject]);
+  }), [
+    state,
+    updateConfiguration,
+    setMaterials,
+    toggleMaterial,
+    setStep,
+    setPhotoFile,
+    removePhoto,
+    setSignArea,
+    setReplaceExistingSurface,
+    setConcept,
+    resetProject,
+  ]);
 
   return <ProjectContext.Provider value={value}>{children}</ProjectContext.Provider>;
 }
