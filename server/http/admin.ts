@@ -1,9 +1,9 @@
-import { ACCOUNT_ROLES, homePathForRole } from '../../src/domain/auth';
-import { authFailure, jsonResponse, requireRole } from '../auth/guard';
-import { cookieName, sessionTtlMinutes } from '../auth/sessions';
-import { createUserRepository, diagnoseUserStore } from '../auth/users';
-import { MINIMUM_ITERATIONS } from '../auth/passwords';
-import type { AuthEnvironment } from '../auth/types';
+import { ACCOUNT_ROLES, homePathForRole } from '../../src/domain/auth.js';
+import { authFailure, jsonResponse, requireRole } from '../auth/guard.js';
+import { cookieName, sessionTtlMinutes } from '../auth/sessions.js';
+import { createUserRepository, diagnoseUserStore } from '../auth/users.js';
+import { MINIMUM_ITERATIONS } from '../auth/passwords.js';
+import type { AuthEnvironment } from '../auth/types.js';
 
 /**
  * Admin API. Every handler authorizes the ADMIN role server-side before it reads or writes

@@ -1,11 +1,11 @@
-import { BUSINESS_CATEGORIES, LIGHTING_TYPES, MAX_SIGN_MATERIALS, SIGN_STYLES, SIGN_TYPES, isSignMaterial, type SignConfiguration, type SignMaterial } from '../../src/domain/sign';
-import { MAX_STOREFRONT_IMAGE_BYTES, ACCEPTED_IMAGE_TYPES } from '../../src/services/upload';
-import { MAX_AI_IMAGE_SIDE } from '../../src/services/ai/contracts';
-import { buildStorefrontEditPrompt, SIGNCRAFT_PROMPT_VERSION } from '../../src/services/ai/promptBuilder';
-import { createAIProvider } from '../ai/providerFactory';
-import type { AIEnvironment, ServerAIResult, ServerImageEditInput } from '../ai/types';
-import { hasValidImageSignature } from './imageValidation';
-import { readImageDimensions } from './imageDimensions';
+import { BUSINESS_CATEGORIES, LIGHTING_TYPES, MAX_SIGN_MATERIALS, SIGN_STYLES, SIGN_TYPES, isSignMaterial, type SignConfiguration, type SignMaterial } from '../../src/domain/sign.js';
+import { MAX_STOREFRONT_IMAGE_BYTES, ACCEPTED_IMAGE_TYPES } from '../../src/services/upload.js';
+import { MAX_AI_IMAGE_SIDE } from '../../src/services/ai/contracts.js';
+import { buildStorefrontEditPrompt, SIGNCRAFT_PROMPT_VERSION } from '../../src/services/ai/promptBuilder.js';
+import { createAIProvider } from '../ai/providerFactory.js';
+import type { AIEnvironment, ServerAIResult, ServerImageEditInput } from '../ai/types.js';
+import { hasValidImageSignature } from './imageValidation.js';
+import { readImageDimensions } from './imageDimensions.js';
 
 const MAX_AI_REQUEST_BODY_BYTES = 12 * 1024 * 1024;
 

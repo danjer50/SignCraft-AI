@@ -1,4 +1,4 @@
-import type { AIConceptResult, SignConfiguration } from '../../domain/sign';
+import type { AIConceptResult, SignConfiguration } from '../../domain/sign.js';
 
 /** FLUX.2 Klein reference images must be smaller than 512 pixels on either side. */
 export const MAX_AI_IMAGE_SIDE = 511;

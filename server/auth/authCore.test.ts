@@ -8,7 +8,7 @@ import {
   parsePasswordHash,
   timingSafeEqual,
   verifyPassword,
-} from './passwords';
+} from './passwords.js';
 import {
   DEFAULT_COOKIE_NAME,
   cookieName,
@@ -19,10 +19,10 @@ import {
   signSessionToken,
   signedOutCookie,
   verifySessionToken,
-} from './sessions';
-import { createUserRepository, diagnoseUserStore } from './users';
-import type { AuthEnvironment } from './types';
-import type { AuthAccount } from '../../src/domain/auth';
+} from './sessions.js';
+import { createUserRepository, diagnoseUserStore } from './users.js';
+import type { AuthEnvironment } from './types.js';
+import type { AuthAccount } from '../../src/domain/auth.js';
 
 /**
  * Throwaway fixture secrets. They exist only inside this test file, they are not credentials for

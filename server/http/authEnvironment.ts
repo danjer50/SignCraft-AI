@@ -1,4 +1,4 @@
-import type { AuthEnvironment } from '../auth/types';
+import type { AuthEnvironment } from '../auth/types.js';
 
 /**
  * Reads the authentication configuration from the Node process environment (Vercel Functions).

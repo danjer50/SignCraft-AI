@@ -1,8 +1,8 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_SIGN_CONFIGURATION } from '../../src/domain/sign';
-import type { AIEnvironment } from '../ai/types';
-import { onRequest } from '../../functions/api/ai/generate-sign';
+import { DEFAULT_SIGN_CONFIGURATION } from '../../src/domain/sign.js';
+import type { AIEnvironment } from '../ai/types.js';
+import { onRequest } from '../../functions/api/ai/generate-sign.js';
 
 function jpegFixture(): Uint8Array {
   return new Uint8Array([

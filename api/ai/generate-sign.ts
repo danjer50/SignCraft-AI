@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { handleAiGeneration } from '../../server/http/ai';
-import { bridgeVercelRequest } from '../../server/http/vercelAdapter';
+import { handleAiGeneration } from '../../server/http/ai.js';
+import { bridgeVercelRequest } from '../../server/http/vercelAdapter.js';
 
 export const config = { api: { bodyParser: false } };
 

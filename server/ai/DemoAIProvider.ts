@@ -1,4 +1,4 @@
-import type { ServerAIProvider, ServerAIResult, ServerImageEditInput } from './types';
+import type { ServerAIProvider, ServerAIResult, ServerImageEditInput } from './types.js';
 
 export class DemoAIProvider implements ServerAIProvider {
   readonly id = 'demo-unconfigured';

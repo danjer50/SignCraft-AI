@@ -1,5 +1,5 @@
-import { handleAiGeneration } from '../../../server/http/ai';
-import type { AIEnvironment } from '../../../server/ai/types';
+import { handleAiGeneration } from '../../../server/http/ai.js';
+import type { AIEnvironment } from '../../../server/ai/types.js';
 
 type PagesContext = { request: Request; env: AIEnvironment };
 

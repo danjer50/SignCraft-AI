@@ -1,6 +1,6 @@
-import { homePathForRole, type AccountRole } from '../../src/domain/auth';
-import { readAuthState } from './sessions';
-import type { AuthEnvironment, AuthState } from './types';
+import { homePathForRole, type AccountRole } from '../../src/domain/auth.js';
+import { readAuthState } from './sessions.js';
+import type { AuthEnvironment, AuthState } from './types.js';
 
 /** Shared HTTP helpers for the authenticated surface. */
 

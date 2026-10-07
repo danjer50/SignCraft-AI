@@ -1,8 +1,8 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest';
-import { DEFAULT_SIGN_CONFIGURATION, type QuoteRequest, type SignConfiguration } from '../../src/domain/sign';
-import { handleAiGeneration } from './ai';
-import { handleQuoteSubmission } from './quotes';
+import { DEFAULT_SIGN_CONFIGURATION, type QuoteRequest, type SignConfiguration } from '../../src/domain/sign.js';
+import { handleAiGeneration } from './ai.js';
+import { handleQuoteSubmission } from './quotes.js';
 
 function jpegFixture(width = 32, height = 24): Uint8Array {
   return new Uint8Array([

@@ -1,6 +1,6 @@
-import type { AIErrorCode } from '../../../src/domain/sign';
-import { hasValidImageSignature } from '../../http/imageValidation';
-import type { AIEnvironment, ServerAIProvider, ServerAIResult, ServerImageEditInput } from '../types';
+import type { AIErrorCode } from '../../../src/domain/sign.js';
+import { hasValidImageSignature } from '../../http/imageValidation.js';
+import type { AIEnvironment, ServerAIProvider, ServerAIResult, ServerImageEditInput } from '../types.js';
 
 export const CLOUDFLARE_FLUX_MODEL = '@cf/black-forest-labs/flux-2-klein-9b';
 const CLOUDFLARE_API_BASE = 'https://api.cloudflare.com/client/v4/accounts/';

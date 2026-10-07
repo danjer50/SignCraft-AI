@@ -1,6 +1,6 @@
-import { CloudflareFluxProvider } from './providers/cloudflareFlux';
-import { DemoAIProvider } from './DemoAIProvider';
-import type { AIEnvironment, ServerAIProvider } from './types';
+import { CloudflareFluxProvider } from './providers/cloudflareFlux.js';
+import { DemoAIProvider } from './DemoAIProvider.js';
+import type { AIEnvironment, ServerAIProvider } from './types.js';
 
 /** Keep provider selection on the server so future models can be swapped without changing the UI. */
 export function createAIProvider(environment: AIEnvironment): ServerAIProvider {

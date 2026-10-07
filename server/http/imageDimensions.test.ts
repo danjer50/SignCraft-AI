@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
-import { readImageDimensions } from './imageDimensions';
+import { readImageDimensions } from './imageDimensions.js';
 
 function jpegFixture(width: number, height: number): Uint8Array {
   return new Uint8Array([

@@ -1,4 +1,4 @@
-import type { UploadedStorefrontPhoto } from '../domain/sign';
+import type { UploadedStorefrontPhoto } from '../domain/sign.js';
 
 export const MAX_STOREFRONT_IMAGE_BYTES = 10 * 1024 * 1024;
 export const ACCEPTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const;

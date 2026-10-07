@@ -1,5 +1,5 @@
-import { handleLogout } from '../../../server/http/auth';
-import type { AuthEnvironment } from '../../../server/auth/types';
+import { handleLogout } from '../../../server/http/auth.js';
+import type { AuthEnvironment } from '../../../server/auth/types.js';
 
 type PagesContext = { request: Request; env: AuthEnvironment };
 

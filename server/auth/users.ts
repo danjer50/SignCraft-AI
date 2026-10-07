@@ -4,15 +4,15 @@ import {
   type AccountRole,
   type AccountStatus,
   type AuthAccount,
-} from '../../src/domain/auth';
-import { isPasswordHash } from './passwords';
+} from '../../src/domain/auth.js';
+import { isPasswordHash } from './passwords.js';
 import type {
   AccountWriteResult,
   AuthEnvironment,
   ProAccountInput,
   StoredAccount,
   UserRepository,
-} from './types';
+} from './types.js';
 
 /** Hard cap on configured accounts: the store is environment-backed, not a database. */
 const MAX_CONFIGURED_ACCOUNTS = 200;

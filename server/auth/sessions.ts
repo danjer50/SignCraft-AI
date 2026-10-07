@@ -1,5 +1,5 @@
-import { isAccountRole, isAccountStatus, type AuthAccount } from '../../src/domain/auth';
-import type { AuthEnvironment, AuthState, IssuedSession, SessionClaims } from './types';
+import { isAccountRole, isAccountStatus, type AuthAccount } from '../../src/domain/auth.js';
+import type { AuthEnvironment, AuthState, IssuedSession, SessionClaims } from './types.js';
 
 /**
  * Sessions are stateless, signed cookies (HMAC-SHA256 over a JSON claim set).

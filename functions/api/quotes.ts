@@ -1,5 +1,5 @@
-import { handleQuoteSubmission } from '../../server/http/quotes';
-import type { QuoteEnvironment } from '../../server/quotes/types';
+import { handleQuoteSubmission } from '../../server/http/quotes.js';
+import type { QuoteEnvironment } from '../../server/quotes/types.js';
 
 type PagesContext = { request: Request; env: QuoteEnvironment };
 

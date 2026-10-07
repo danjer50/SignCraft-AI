@@ -1,5 +1,5 @@
-import { handleAdminOverview } from '../../../server/http/admin';
-import type { AuthEnvironment } from '../../../server/auth/types';
+import { handleAdminOverview } from '../../../server/http/admin.js';
+import type { AuthEnvironment } from '../../../server/auth/types.js';
 
 type PagesContext = { request: Request; env: AuthEnvironment };
 

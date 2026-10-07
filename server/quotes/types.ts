@@ -1,4 +1,4 @@
-import type { QuoteRequest } from '../../src/domain/sign';
+import type { QuoteRequest } from '../../src/domain/sign.js';
 
 export interface QuoteEnvironment {
   QUOTE_STORAGE_PROVIDER?: string;

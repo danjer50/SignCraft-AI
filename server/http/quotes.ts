@@ -1,8 +1,8 @@
-import { BUSINESS_CATEGORIES, LIGHTING_TYPES, MAX_SIGN_MATERIALS, QUOTE_STATUSES, SIGN_STYLES, SIGN_TYPES, isSignMaterial, type QuoteRequest } from '../../src/domain/sign';
-import { ACCEPTED_IMAGE_TYPES, MAX_STOREFRONT_IMAGE_BYTES } from '../../src/services/upload';
-import { createQuoteRepository } from '../quotes/repositoryFactory';
-import type { QuoteEnvironment } from '../quotes/types';
-import { hasValidImageFileSignature } from './imageValidation';
+import { BUSINESS_CATEGORIES, LIGHTING_TYPES, MAX_SIGN_MATERIALS, QUOTE_STATUSES, SIGN_STYLES, SIGN_TYPES, isSignMaterial, type QuoteRequest } from '../../src/domain/sign.js';
+import { ACCEPTED_IMAGE_TYPES, MAX_STOREFRONT_IMAGE_BYTES } from '../../src/services/upload.js';
+import { createQuoteRepository } from '../quotes/repositoryFactory.js';
+import type { QuoteEnvironment } from '../quotes/types.js';
+import { hasValidImageFileSignature } from './imageValidation.js';
 
 function json(body: unknown, status: number): Response {
   return new Response(JSON.stringify(body), {

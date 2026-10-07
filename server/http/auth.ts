@@ -1,9 +1,9 @@
-import { homePathForRole, normalizeAuthAccount } from '../../src/domain/auth';
-import { equalizeTiming, verifyPassword } from '../auth/passwords';
-import { authenticate, authFailure, isSameOriginRequest, jsonResponse } from '../auth/guard';
-import { issueSession, signedOutCookie } from '../auth/sessions';
-import { createUserRepository } from '../auth/users';
-import type { AuthEnvironment } from '../auth/types';
+import { homePathForRole, normalizeAuthAccount } from '../../src/domain/auth.js';
+import { equalizeTiming, verifyPassword } from '../auth/passwords.js';
+import { authenticate, authFailure, isSameOriginRequest, jsonResponse } from '../auth/guard.js';
+import { issueSession, signedOutCookie } from '../auth/sessions.js';
+import { createUserRepository } from '../auth/users.js';
+import type { AuthEnvironment } from '../auth/types.js';
 
 /**
  * Authentication HTTP handlers: one shared login for every role.

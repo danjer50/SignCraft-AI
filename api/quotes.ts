@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { handleQuoteSubmission } from '../server/http/quotes';
-import { bridgeVercelRequest } from '../server/http/vercelAdapter';
+import { handleQuoteSubmission } from '../server/http/quotes.js';
+import { bridgeVercelRequest } from '../server/http/vercelAdapter.js';
 
 export const config = { api: { bodyParser: false } };
 

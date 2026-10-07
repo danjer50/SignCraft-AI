@@ -1,8 +1,8 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest';
-import type { SignConfiguration } from '../../../src/domain/sign';
-import type { AIEnvironment, ServerImageEditInput } from '../types';
-import { CloudflareFluxProvider, CLOUDFLARE_FLUX_MODEL } from './cloudflareFlux';
+import type { SignConfiguration } from '../../../src/domain/sign.js';
+import type { AIEnvironment, ServerImageEditInput } from '../types.js';
+import { CloudflareFluxProvider, CLOUDFLARE_FLUX_MODEL } from './cloudflareFlux.js';
 
 const accountId = '0123456789abcdef0123456789abcdef';
 const env: AIEnvironment = { CLOUDFLARE_ACCOUNT_ID: accountId, CLOUDFLARE_API_TOKEN: 'test-only-token-never-real' };

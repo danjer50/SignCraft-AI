@@ -2,7 +2,7 @@
 import { execFile } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 import { promisify } from 'node:util';
-import { isPasswordHash, verifyPassword } from './passwords';
+import { isPasswordHash, verifyPassword } from './passwords.js';
 
 const run = promisify(execFile);
 

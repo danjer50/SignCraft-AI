@@ -1,4 +1,4 @@
-import type { AIErrorCode, SignConfiguration } from '../../src/domain/sign';
+import type { AIErrorCode, SignConfiguration } from '../../src/domain/sign.js';
 
 export interface AIEnvironment {
   AI_PROVIDER?: string;

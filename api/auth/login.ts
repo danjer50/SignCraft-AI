@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { handleLogin } from '../../server/http/auth';
-import { readAuthEnvironment } from '../../server/http/authEnvironment';
-import { bridgeVercelRequest } from '../../server/http/vercelAdapter';
+import { handleLogin } from '../../server/http/auth.js';
+import { readAuthEnvironment } from '../../server/http/authEnvironment.js';
+import { bridgeVercelRequest } from '../../server/http/vercelAdapter.js';
 
 export const config = { api: { bodyParser: false } };
 

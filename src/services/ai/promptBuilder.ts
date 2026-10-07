@@ -1,5 +1,5 @@
-import type { SignConfiguration, SignMaterial } from '../../domain/sign';
-import { normalizeMaterials } from '../../domain/sign';
+import type { SignConfiguration, SignMaterial } from '../../domain/sign.js';
+import { normalizeMaterials } from '../../domain/sign.js';
 
 export const SIGNCRAFT_PROMPT_VERSION = 'storefront-inpaint-v3';
 

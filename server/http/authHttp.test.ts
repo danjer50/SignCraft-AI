@@ -1,10 +1,10 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it } from 'vitest';
-import { handleLogin, handleLogout, handleSession, resetLoginThrottling } from './auth';
-import { handleAdminOverview, handleAdminProAccounts, handleAdminUsers, ADMIN_SECTION_IDS } from './admin';
-import { MINIMUM_ITERATIONS, hashPassword } from '../auth/passwords';
-import { signSessionToken } from '../auth/sessions';
-import type { AuthEnvironment } from '../auth/types';
+import { handleLogin, handleLogout, handleSession, resetLoginThrottling } from './auth.js';
+import { handleAdminOverview, handleAdminProAccounts, handleAdminUsers, ADMIN_SECTION_IDS } from './admin.js';
+import { MINIMUM_ITERATIONS, hashPassword } from '../auth/passwords.js';
+import { signSessionToken } from '../auth/sessions.js';
+import type { AuthEnvironment } from '../auth/types.js';
 
 /**
  * Fixture credentials for these tests only. They are not deployed anywhere, they are not the

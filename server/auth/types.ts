@@ -1,4 +1,4 @@
-import type { AuthAccount, AccountRole, AccountStatus } from '../../src/domain/auth';
+import type { AuthAccount, AccountRole, AccountStatus } from '../../src/domain/auth.js';
 
 /**
  * Authentication configuration. Every value comes from the deployment environment (Vercel
