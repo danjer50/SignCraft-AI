@@ -1,11 +1,99 @@
-import { CloudflareFluxProvider } from './providers/cloudflareFlux.js';
-import { DemoAIProvider } from './DemoAIProvider.js';
-import type { AIEnvironment, ServerAIProvider } from './types.js';
+import { CLOUDFLARE_FLUX_MODEL, CloudflareFluxProvider } from './providers/cloudflareFlux.js';
+import { GEMINI_DEFAULT_MODEL, GeminiImageProvider } from './providers/gemini.js';
+import { GROQ_DEFAULT_MODEL, GroqTextProvider } from './providers/groq.js';
+import { OPENROUTER_DEFAULT_MODEL, OpenRouterImageProvider } from './providers/openRouter.js';
+import type {
+  AIEnvironment,
+  AIProviderOptions,
+  AITask,
+  ServerAIImageProvider,
+  ServerAITextProvider,
+} from './types.js';
 
-/** Keep provider selection on the server so future models can be swapped without changing the UI. */
-export function createAIProvider(environment: AIEnvironment): ServerAIProvider {
-  const configuredName = environment.AI_PROVIDER?.trim().toLowerCase();
-  if (!configuredName || configuredName === 'demo') return new DemoAIProvider();
-  if (configuredName === 'cloudflare-flux') return new CloudflareFluxProvider(environment);
-  return new DemoAIProvider(`Provider “${configuredName}” has no server adapter installed yet.`);
+/**
+ * One entry per AI provider. Adding a provider means adding an entry here plus its adapter file —
+ * nothing in the studio, the API handlers or the UI changes.
+ */
+export interface AIProviderEntry {
+  readonly id: string;
+  /** Human-readable name for logs and the admin dashboard. */
+  readonly label: string;
+  /** The tasks this provider can really serve; the router never sends it anything else. */
+  readonly capabilities: readonly AITask[];
+  /** The model currently configured for this provider (never a secret). */
+  model(environment: AIEnvironment): string;
+  /** True when the credentials for this provider are present in the server environment. */
+  isConfigured(environment: AIEnvironment): boolean;
+  createImageProvider?(environment: AIEnvironment, options?: AIProviderOptions): ServerAIImageProvider;
+  createTextProvider?(environment: AIEnvironment, options?: AIProviderOptions): ServerAITextProvider;
+}
+
+/**
+ * Default fallback order, used when `AI_PROVIDER_ORDER` is not set.
+ *
+ * Groq is listed first because that is the requested order, but it declares only `text` support,
+ * so the image router skips it without spending a request (see PHASE 8 capability handling).
+ */
+export const DEFAULT_PROVIDER_ORDER = ['groq', 'gemini', 'openrouter'] as const;
+
+function nonEmpty(value: string | undefined): boolean {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+export const AI_PROVIDER_ENTRIES: readonly AIProviderEntry[] = [
+  {
+    id: 'groq',
+    label: 'Groq',
+    capabilities: ['text'],
+    model: (environment) => environment.GROQ_MODEL?.trim() || GROQ_DEFAULT_MODEL,
+    isConfigured: (environment) => nonEmpty(environment.GROQ_API_KEY),
+    createTextProvider: (environment, options) => new GroqTextProvider(environment, options),
+  },
+  {
+    id: 'gemini',
+    label: 'Google Gemini',
+    capabilities: ['image-edit'],
+    model: (environment) => environment.GEMINI_MODEL?.trim() || GEMINI_DEFAULT_MODEL,
+    isConfigured: (environment) => nonEmpty(environment.GEMINI_API_KEY),
+    createImageProvider: (environment, options) => new GeminiImageProvider(environment, options),
+  },
+  {
+    id: 'openrouter',
+    label: 'OpenRouter',
+    capabilities: ['image-edit'],
+    model: (environment) => environment.OPENROUTER_MODEL?.trim() || OPENROUTER_DEFAULT_MODEL,
+    isConfigured: (environment) => nonEmpty(environment.OPENROUTER_API_KEY),
+    createImageProvider: (environment, options) => new OpenRouterImageProvider(environment, options),
+  },
+  {
+    id: 'cloudflare-flux',
+    label: 'Cloudflare Workers AI (FLUX.2 Klein 9B)',
+    capabilities: ['image-edit'],
+    model: () => CLOUDFLARE_FLUX_MODEL,
+    isConfigured: (environment) => /^[a-f0-9]{32}$/i.test(environment.CLOUDFLARE_ACCOUNT_ID?.trim() ?? '')
+      && nonEmpty(environment.CLOUDFLARE_API_TOKEN),
+    createImageProvider: (environment, options) => new CloudflareFluxProvider(
+      environment,
+      options?.fetchImpl,
+      options?.timeoutMs,
+    ),
+  },
+];
+
+/** Provider names are matched case-insensitively, the same way `AI_PROVIDER` always has been. */
+export function findProviderEntry(id: string): AIProviderEntry | undefined {
+  const normalized = id.trim().toLowerCase();
+  return AI_PROVIDER_ENTRIES.find((entry) => entry.id === normalized);
+}
+
+/**
+ * Create one provider adapter by id. `AI_PROVIDER` is resolved through the router, which may try
+ * several providers; this helper builds a single adapter (used by the router and by tests).
+ */
+export function createAIProvider(
+  id: string,
+  environment: AIEnvironment,
+  options: AIProviderOptions = {},
+): ServerAIImageProvider | undefined {
+  return findProviderEntry(id)?.createImageProvider?.(environment, options);
 }

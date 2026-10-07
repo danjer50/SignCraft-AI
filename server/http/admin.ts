@@ -3,6 +3,7 @@ import { authFailure, jsonResponse, requireRole } from '../auth/guard.js';
 import { cookieName, sessionTtlMinutes } from '../auth/sessions.js';
 import { createUserRepository, diagnoseUserStore } from '../auth/users.js';
 import { MINIMUM_ITERATIONS } from '../auth/passwords.js';
+import { describeAiProviders } from '../ai/router.js';
 import type { AuthEnvironment } from '../auth/types.js';
 
 /**
@@ -61,6 +62,10 @@ export async function handleAdminOverview(request: Request, environment: AuthEnv
   const security = sessionSecuritySummary(environment);
   const quoteProvider = (environment.QUOTE_STORAGE_PROVIDER ?? 'demo').toLowerCase();
   const aiProvider = (environment.AI_PROVIDER ?? 'demo').toLowerCase();
+  // Non-secret view of the AI chain: ids, models and readiness only — never a key.
+  const ai = describeAiProviders(environment);
+  const aiChain = ai.order.join(', ') || 'none configured';
+  const aiConfigured = ai.providers.filter((provider) => provider.configured).map((provider) => provider.id).join(', ') || 'none';
 
   const sections: AdminSectionState[] = [
     {
@@ -100,7 +105,13 @@ export async function handleAdminOverview(request: Request, environment: AuthEnv
     {
       id: 'aiUsage',
       state: 'foundation',
-      metrics: { provider: aiProvider, activityStoreConnected: false, requestsLogged: 0 },
+      metrics: {
+        provider: aiProvider,
+        fallbackChain: aiChain,
+        providersConfigured: aiConfigured,
+        activityStoreConnected: false,
+        requestsLogged: 0,
+      },
       issues: ['AI activity logging is not connected; the provider setting is reported for information only.'],
     },
     {
@@ -114,6 +125,7 @@ export async function handleAdminOverview(request: Request, environment: AuthEnv
       state: 'ready',
       metrics: {
         aiMode: aiProvider,
+        aiFallbackChain: aiChain,
         quoteMode: quoteProvider,
         proWorkspaceEnabled: diagnostics.pro > 0,
         adminAccounts: diagnostics.admins,

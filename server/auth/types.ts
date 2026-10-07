@@ -23,6 +23,23 @@ export interface AuthEnvironment {
   AUTH_USERS_JSON?: string;
   /** Read-only information shown in the Admin console. */
   AI_PROVIDER?: string;
+  /**
+   * Multi-provider AI settings, read only to describe the configuration in the Admin console.
+   * The credentials themselves are never rendered: the dashboard reports ids, models and
+   * whether a provider is configured, never a key.
+   */
+  AI_PROVIDER_ORDER?: string;
+  AI_PROVIDER_TIMEOUT_MS?: string;
+  AI_TOTAL_TIMEOUT_MS?: string;
+  AI_API_KEY?: string;
+  GROQ_API_KEY?: string;
+  GROQ_MODEL?: string;
+  GEMINI_API_KEY?: string;
+  GEMINI_MODEL?: string;
+  OPENROUTER_API_KEY?: string;
+  OPENROUTER_MODEL?: string;
+  CLOUDFLARE_ACCOUNT_ID?: string;
+  CLOUDFLARE_API_TOKEN?: string;
   QUOTE_STORAGE_PROVIDER?: string;
 }
 

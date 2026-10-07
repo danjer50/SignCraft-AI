@@ -2,7 +2,7 @@ import { BUSINESS_CATEGORIES, LIGHTING_TYPES, MAX_SIGN_MATERIALS, SIGN_STYLES, S
 import { MAX_STOREFRONT_IMAGE_BYTES, ACCEPTED_IMAGE_TYPES } from '../../src/services/upload.js';
 import { MAX_AI_IMAGE_SIDE } from '../../src/services/ai/contracts.js';
 import { buildStorefrontEditPrompt, SIGNCRAFT_PROMPT_VERSION } from '../../src/services/ai/promptBuilder.js';
-import { createAIProvider } from '../ai/providerFactory.js';
+import { runImageEditTask } from '../ai/router.js';
 import type { AIEnvironment, ServerAIResult, ServerImageEditInput } from '../ai/types.js';
 import { hasValidImageSignature } from './imageValidation.js';
 import { readImageDimensions } from './imageDimensions.js';
@@ -169,7 +169,7 @@ export async function handleAiGeneration(request: Request, environment: AIEnviro
 
   let result: ServerAIResult;
   try {
-    result = await createAIProvider(environment).generate(input);
+    result = await runImageEditTask(input, environment);
   } catch {
     return json({
       status: 'ERROR',
