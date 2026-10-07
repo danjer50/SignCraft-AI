@@ -9,6 +9,25 @@ import { STUDIO_DRAFT_KEY } from '../services/draftStorage';
 import { StudioPage } from './StudioPage';
 import { ResultPage } from './ResultPage';
 
+/**
+ * This suite walks the studio steps, so the AI request itself is stubbed: the real client, its image
+ * preparation and the provider chain have their own suites (`src/services/ai`, `server/`). The
+ * stubbed answer is the honest one the UI must render when no provider produced an image.
+ */
+vi.mock('../services/ai', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/ai')>();
+  return {
+    ...actual,
+    generateStorefrontConcept: vi.fn(async () => ({
+      status: 'UNAVAILABLE' as const,
+      providerId: 'demo-unconfigured',
+      message: 'No image-editing provider is configured. Your storefront photo has not been edited.',
+      createdAt: new Date().toISOString(),
+      sourceImageTransfer: 'LOCAL_ONLY' as const,
+    })),
+  };
+});
+
 vi.mock('../services/upload', async () => {
   const actual = await vi.importActual<typeof import('../services/upload')>('../services/upload');
   return {

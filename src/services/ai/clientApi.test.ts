@@ -88,6 +88,25 @@ describe('AI client failure recovery in API mode', () => {
     }
   });
 
+  it('reports an unconfigured server plainly, instead of blaming demo mode', async () => {
+    mockFetch(async () => jsonResponse({
+      status: 'UNAVAILABLE',
+      code: 'AI_NOT_CONFIGURED',
+      providerId: 'demo-unconfigured',
+      message: 'No secure image-editing provider is configured. The source storefront has not been edited.',
+    }, 503));
+
+    const result = await generateStorefrontConcept({ sourceImage, configuration });
+
+    expect(result.status).toBe('ERROR');
+    if (result.status === 'ERROR') {
+      expect(result.errorCode).toBe('AI_NOT_CONFIGURED');
+      // The photo did reach the server, so the transfer is reported as such — and the result page
+      // shows the provider-neutral "no AI provider is configured on the server" message.
+      expect(result.sourceImageTransfer).toBe('SENT_TO_SERVER');
+    }
+  });
+
   it('reports a timeout as unconfirmed instead of hanging the loading state forever', async () => {
     expect(AI_REQUEST_TIMEOUT_MS).toBeGreaterThan(0);
     mockFetch(async () => {

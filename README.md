@@ -135,7 +135,7 @@ npm run hash-password   # optional: provision the owner (ADMIN) account, prints 
 npm run dev
 ```
 
-Vite prints the local development URL. The interface works with the default zero-cost demo settings and no API credentials.
+Vite prints the local development URL. The browser build calls the server routes, and `npm run dev` serves `/api/ai/generate-sign` from the same shared handler, so the real chain can be exercised locally. Set `VITE_AI_MODE=demo` in `.env` for a zero-cost offline demonstration with no credentials.
 
 Quality checks:
 
@@ -152,12 +152,12 @@ Copy `.env.example` and configure only what you need:
 
 | Variable | Where it is used | Default | Purpose |
 | --- | --- | --- | --- |
-| `VITE_AI_MODE` | Browser-safe build flag | `demo` | `demo` never generates an image; `api` locally resizes/compresses a copy to a JPEG under 512 × 512, then submits it to `/api/ai/generate-sign`. The original file stays in the browser. |
+| `VITE_AI_MODE` | Browser-safe build flag | `api` | `api` locally resizes/compresses a copy to a JPEG under 512 × 512, then submits it to `/api/ai/generate-sign`, where the provider credentials live — this is the default, so a deployment needs no build flag. `demo` is an explicit offline demonstration: the browser never calls the AI service and no render is created. The original file stays in the browser either way. |
 | `VITE_QUOTE_MODE` | Browser-safe build flag | `local` | `local` saves an explicitly labelled local draft; `api` submits to `/api/quotes` and only reports success after an HTTP 201 confirmation. |
 | `VITE_SITE_URL` | Browser build | empty | Adds canonical/Open Graph URLs when configured. |
 | `VITE_WHATSAPP_NUMBER` | Browser build | empty | Public contact number in international digits, without `+` or spaces, for `https://wa.me/<number>`. Do not put a private API key here. |
 | `SITE_URL` | Build process | empty | When set to an absolute HTTPS URL, generates `dist/sitemap.xml`. |
-| `AI_PROVIDER_ORDER` | **Server only** | `groq,gemini,openrouter` | Comma-separated fallback order. Each provider is tried at most once, in this order, and never in parallel. |
+| `AI_PROVIDER_ORDER` | **Server only** | `groq,gemini,openrouter,cloudflare-flux` | Comma-separated fallback order. Each provider is tried at most once, in this order, and never in parallel. Cloudflare Workers AI closes the default chain so a deployment that already has `CLOUDFLARE_ACCOUNT_ID` + `CLOUDFLARE_API_TOKEN` keeps working without any extra variable; it is skipped silently when unconfigured, and setting this variable replaces the default order entirely. |
 | `GROQ_API_KEY` | **Server secret** | empty | Groq API key. Groq serves text models only, so it is skipped for sign generation (no image models) and is ready for future text features. |
 | `GROQ_MODEL` | **Server only** | `openai/gpt-oss-120b` | Groq model id. |
 | `GEMINI_API_KEY` | **Server secret** | empty | Google Gemini API key ([Google AI Studio](https://aistudio.google.com/apikey)). |
@@ -214,9 +214,8 @@ The client-side contract lives in `src/services/ai/contracts.ts`. Server adapter
 
 ### Configure the providers
 
-1. Set the public build flag `VITE_AI_MODE=api`.
-2. Add the server keys for the providers you want (at minimum one image provider: Gemini, OpenRouter or Cloudflare). Optionally set `AI_PROVIDER_ORDER` to change the order.
-3. Redeploy so the frontend mode and server environment are both active. For local secrets, `.env` is git-ignored; `npm run dev` now also serves `/api/ai/generate-sign` through the same shared handler, so the real chain can be exercised locally.
+1. Add the server keys for the providers you want (at minimum one image provider: Gemini, OpenRouter or Cloudflare Workers AI). Optionally set `AI_PROVIDER_ORDER` to change the order; the default order already ends with Cloudflare.
+2. Redeploy so the server environment is active. The browser calls `/api/ai/generate-sign` by default, so **no public build flag is required**; set `VITE_AI_MODE=demo` only if you deliberately want the offline demonstration build. For local secrets, `.env` is git-ignored; `npm run dev` now also serves `/api/ai/generate-sign` through the same shared handler, so the real chain can be exercised locally.
 
 Google Gemini is called at the fixed `generativelanguage.googleapis.com` host with the key in the `x-goog-api-key` header; the source photo travels as `inline_data` base64 and the edited image is read back from `candidates[0].content.parts[].inlineData`. OpenRouter is called at the fixed `openrouter.ai/api/v1/chat/completions` host with `modalities: ["text","image"]`; the photo is attached as a base64 `image_url` and the edited image is read from `choices[0].message.images[]`. Both adapters validate the returned bytes' image signature before anything is returned to the browser, and both hosts are constants, so request data cannot become an arbitrary URL.
 
@@ -269,7 +268,7 @@ Cloudflare references: [FLUX.2 Klein 9B model schema](https://developers.cloudfl
 - `/api/ai/generate-sign` (and the backwards-compatible `/api/ai/generate`) plus `/api/quotes` are Vercel Node function entry points under `api/`; a bounded request adapter converts multipart bodies to the shared Fetch handlers. The AI client uploads only its resized/compressed copy. Keep platform payload limits in mind and use signed object-storage uploads if quote uploads approach platform limits.
 - The SPA rewrite is in `vercel.json`.
 - Add server secrets in Vercel’s project environment settings, not in client variables.
-- **Exact Vercel environment variables.** Required for sign generation: `VITE_AI_MODE=api` (build-time, public) and at least one of `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, `POLLINATIONS_API_KEY` (with `AI_PROVIDER_ORDER` naming `pollinations`) or the `CLOUDFLARE_ACCOUNT_ID` + `CLOUDFLARE_API_TOKEN` pair. Optional: `AI_PROVIDER_ORDER` (default `groq,gemini,openrouter`), `GEMINI_MODEL`, `OPENROUTER_MODEL`, `POLLINATIONS_MODEL`, `GROQ_API_KEY` + `GROQ_MODEL` (text models only), `AI_PROVIDER_TIMEOUT_MS`, `AI_TOTAL_TIMEOUT_MS`, and the legacy `AI_PROVIDER` pin. All of these are server-side: never prefix an AI key with `VITE_`.
+- **Exact Vercel environment variables.** Required for sign generation: at least one of `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, `POLLINATIONS_API_KEY` (with `AI_PROVIDER_ORDER` naming `pollinations`) or the `CLOUDFLARE_ACCOUNT_ID` + `CLOUDFLARE_API_TOKEN` pair. Optional: `VITE_AI_MODE=demo` (build-time, public) only for an offline demonstration build, `AI_PROVIDER_ORDER` (default `groq,gemini,openrouter,cloudflare-flux`), `GEMINI_MODEL`, `OPENROUTER_MODEL`, `POLLINATIONS_MODEL`, `GROQ_API_KEY` + `GROQ_MODEL` (text models only), `AI_PROVIDER_TIMEOUT_MS`, `AI_TOTAL_TIMEOUT_MS`, and the legacy `AI_PROVIDER` pin. All AI keys are server-side: never prefix one with `VITE_`.
 - A chain can outlive a very short function limit. If your plan caps function duration below `AI_TOTAL_TIMEOUT_MS`, lower `AI_PROVIDER_TIMEOUT_MS` and `AI_TOTAL_TIMEOUT_MS` to fit.
 
 ### Cloudflare Pages

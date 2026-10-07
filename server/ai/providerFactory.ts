@@ -35,11 +35,17 @@ export interface AIProviderEntry {
  * Groq is listed first because that is the requested order, but it declares only `text` support,
  * so the image router skips it without spending a request (see PHASE 8 capability handling).
  *
+ * Cloudflare Workers AI closes the default chain on purpose. It is the provider SignCraft AI
+ * shipped with, so an existing deployment usually has exactly those two credentials and no
+ * `AI_PROVIDER_ORDER` at all; without it in the default order such a deployment would have image
+ * credentials present and still answer "no provider configured". As a `default` step it is skipped
+ * silently when unconfigured, it never displaces an explicitly listed provider, and an explicit
+ * `AI_PROVIDER_ORDER` still replaces the whole default order.
+ *
  * Pollinations is deliberately absent: it joins the chain only when an operator names it in
- * `AI_PROVIDER_ORDER` or pins it with `AI_PROVIDER=pollinations`, so adding it changed no existing
- * deployment's behaviour.
+ * `AI_PROVIDER_ORDER` or pins it with `AI_PROVIDER=pollinations`, so it stays opt-in.
  */
-export const DEFAULT_PROVIDER_ORDER = ['groq', 'gemini', 'openrouter'] as const;
+export const DEFAULT_PROVIDER_ORDER = ['groq', 'gemini', 'openrouter', 'cloudflare-flux'] as const;
 
 function nonEmpty(value: string | undefined): boolean {
   return typeof value === 'string' && value.trim().length > 0;

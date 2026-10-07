@@ -83,6 +83,18 @@ function pollinationsImageResponse(): Response {
   }), { status: 200, headers: { 'content-type': 'application/json' } });
 }
 
+function cloudflareImageResponse(): Response {
+  return new Response(JSON.stringify({
+    success: true,
+    result: { image: Buffer.from(tinyPng()).toString('base64') },
+  }), { status: 200, headers: { 'content-type': 'application/json' } });
+}
+
+const cloudflareOnly: AIEnvironment = {
+  CLOUDFLARE_ACCOUNT_ID: '0123456789abcdef0123456789abcdef',
+  CLOUDFLARE_API_TOKEN: 'test-only-token-never-real',
+};
+
 let logSpy: ReturnType<typeof vi.spyOn>;
 
 beforeEach(() => {
@@ -101,7 +113,26 @@ describe('provider chain resolution', () => {
     expect(chain.skipped).toEqual([
       { id: 'groq', reason: 'unsupported' },
       { id: 'openrouter', reason: 'unconfigured' },
+      { id: 'cloudflare-flux', reason: 'unconfigured' },
     ]);
+  });
+
+  it('reaches Cloudflare Workers AI by default, so an existing Cloudflare-only deployment works', () => {
+    const chain = resolveProviderChain('image-edit', cloudflareOnly);
+
+    expect(chain.attempts.map((step) => step.entry.id)).toEqual(['cloudflare-flux']);
+    expect(chain.attempts[0].requested).toBe('default');
+    expect(chain.skipped).toEqual([
+      { id: 'groq', reason: 'unsupported' },
+      { id: 'gemini', reason: 'unconfigured' },
+      { id: 'openrouter', reason: 'unconfigured' },
+    ]);
+  });
+
+  it('keeps Cloudflare last when other providers are configured, and never duplicates it', () => {
+    const chain = resolveProviderChain('image-edit', { ...allThree, ...cloudflareOnly });
+
+    expect(chain.attempts.map((step) => step.entry.id)).toEqual(['gemini', 'openrouter', 'cloudflare-flux']);
   });
 
   it('pins AI_PROVIDER first and keeps every other configured provider as a fallback', () => {
@@ -253,6 +284,17 @@ describe('image-edit fallback chain', () => {
 
     expect(result.status).toBe('GENERATED');
     if (result.status === 'GENERATED') expect(result.providerId).toBe('gemini');
+    expect(fetchMock.mock.calls[0][0]).toContain('api.cloudflare.com');
+  });
+
+  it('generates through Cloudflare Workers AI for a Cloudflare-only deployment, with no extra variables', async () => {
+    const fetchMock = scriptedFetch({ cloudflare: cloudflareImageResponse });
+    const result = await runImageEditTask(makeInput(), cloudflareOnly, { fetchImpl: fetchMock });
+
+    expect(result.status).toBe('GENERATED');
+    // The adapter reports its own model-scoped id; the chain step is `cloudflare-flux`.
+    if (result.status === 'GENERATED') expect(result.providerId).toBe('cloudflare-flux-2-klein-9b');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls[0][0]).toContain('api.cloudflare.com');
   });
 

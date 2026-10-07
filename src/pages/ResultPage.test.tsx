@@ -110,7 +110,7 @@ describe('result page states', () => {
     expect(screen.getByRole('button', { name: /Réessayer le rendu/i })).toBeDisabled();
   });
 
-  it('falls back to the honest unavailable panel when demo mode has no provider', () => {
+  it('explains an unanswered AI request instead of blaming demo mode when the app runs against the API', () => {
     seedDraft({
       status: 'UNAVAILABLE',
       providerId: 'demo-unconfigured',
@@ -121,6 +121,8 @@ describe('result page states', () => {
     renderResult();
 
     expect(screen.getAllByText('Aucun rendu IA n’a été créé.').length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Le service d’IA n’a pas renvoyé de rendu/i).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/Le mode démo n’a pas de fournisseur/i)).not.toBeInTheDocument();
     expect(screen.getAllByText(/Votre photo d’origine n’a pas été modifiée/i).length).toBeGreaterThan(0);
     expect(screen.getByText('Photo locale · non transmise à l’IA')).toBeInTheDocument();
     expect(screen.getAllByText('ATELIER SABLE').length).toBeGreaterThan(0);
