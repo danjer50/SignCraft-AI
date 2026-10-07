@@ -207,3 +207,43 @@ describe('simplified customer flow', () => {
     expect(screen.queryByRole('heading', { level: 1, name: 'Votre projet prend forme.' })).not.toBeInTheDocument();
   });
 });
+
+describe('bilingual-style text reminder', () => {
+  it('warns when the bilingual style is chosen but the exact text is only one script', async () => {
+    seedDraft({
+      step: 4,
+      configuration: { ...DEFAULT_SIGN_CONFIGURATION, businessName: 'Atelier Sable', exactText: 'Café', style: 'arabicFrench' },
+    });
+    renderStudioFlow();
+
+    expect(await screen.findByText('Quel style pour votre enseigne ?')).toBeInTheDocument();
+    const reminder = screen.getByRole('note');
+    expect(reminder.className).toContain('is-warning');
+    expect(reminder).toHaveTextContent('Café');
+
+    fireEvent.click(screen.getByRole('button', { name: /Modifier le texte/i }));
+    expect(await screen.findByText('Parlez-nous de votre activité')).toBeInTheDocument();
+  });
+
+  it('does not warn once the exact text already combines both scripts', async () => {
+    seedDraft({
+      step: 4,
+      configuration: { ...DEFAULT_SIGN_CONFIGURATION, businessName: 'Atelier Sable', exactText: 'مقهى · Café', style: 'arabicFrench' },
+    });
+    renderStudioFlow();
+
+    expect(await screen.findByText('Quel style pour votre enseigne ?')).toBeInTheDocument();
+    expect(screen.getByRole('note').className).not.toContain('is-warning');
+  });
+
+  it('shows no reminder at all for styles unrelated to Arabic or bilingual text', async () => {
+    seedDraft({
+      step: 4,
+      configuration: { ...DEFAULT_SIGN_CONFIGURATION, businessName: 'Atelier Sable', style: 'modern' },
+    });
+    renderStudioFlow();
+
+    expect(await screen.findByText('Quel style pour votre enseigne ?')).toBeInTheDocument();
+    expect(screen.queryByRole('note')).not.toBeInTheDocument();
+  });
+});

@@ -1,7 +1,7 @@
 import type { SignConfiguration, SignMaterial } from '../../domain/sign.js';
 import { computeSignAreaBounds, normalizeMaterials } from '../../domain/sign.js';
 
-export const SIGNCRAFT_PROMPT_VERSION = 'storefront-inpaint-v3';
+export const SIGNCRAFT_PROMPT_VERSION = 'storefront-inpaint-v4';
 
 const signDescriptions: Record<SignConfiguration['signType'], string> = {
   threeD: 'raised three-dimensional lettering',
@@ -56,7 +56,7 @@ function describeSignPlacement(configuration: SignConfiguration): string {
   const bounds = computeSignAreaBounds(configuration.signArea);
   if (!bounds) {
     return configuration.replaceExistingSurface
-      ? 'The customer indicates the intended sign area currently holds something that should be fully covered or replaced (for example old signage, a shutter or security bars). Still make only a localized change limited to the general sign area; keep the rest of the facade untouched.'
+      ? 'The customer indicates the intended sign area currently holds something that should be fully covered or replaced (for example old signage, a shutter or security bars). Make that area clearly, visibly different from the source photo; still keep the rest of the facade untouched.'
       : '';
   }
   const centerX = Math.round(bounds.centerXPercent);
@@ -67,9 +67,26 @@ function describeSignPlacement(configuration: SignConfiguration): string {
   const bottom = Math.min(100, Math.round(bounds.yPercent + bounds.heightPercent));
   const placement = `The customer painted a mark on the source photo to show roughly WHERE the sign belongs, centered at about (${centerX}%, ${centerY}%) of the image, within a general zone spanning approximately (${left}%, ${top}%) to (${right}%, ${bottom}%) of the frame. This mark is only a location indicator, not an exact crop, mask or size: do not crop, letterbox or force the sign to fill exactly this painted shape. Instead, place one sign naturally at that facade location, choosing realistic proportions and scale for that spot and sign type, the way a real sign would actually be mounted there. Keep the change generally limited to that area and its immediate surroundings; everything well outside it should remain close to the source photo.`;
   const coverage = configuration.replaceExistingSurface
-    ? ' Whatever currently occupies that general location (for example an old sign, a shutter, security bars or a blank wall) must be fully removed and replaced with one confident, complete, professionally fabricated sign; do not leave the old element partially visible.'
+    ? ' Whatever currently occupies that general location (for example an old sign, a shutter, security bars, pillars, grilles or a blank wall) must be fully removed, covered or wrapped and replaced with one confident, complete, professionally fabricated sign or decorative cladding; do not leave the old element, its texture or its colour partially visible underneath or around the new one.'
     : ' Add the new sign at that general location.';
-  return placement + coverage;
+  const mandatoryChange = ' This edit is the whole point of the request: the marked area MUST look clearly, unmistakably different from the source photo in the final image. A result where that area looks the same, almost the same, or only subtly different from the original photo is a failed edit, even if the rest of the photo is preserved perfectly.';
+  return placement + coverage + mandatoryChange;
+}
+
+/**
+ * Extra guidance for rendering the exact text, specific to scripts diffusion models commonly
+ * mishandle. Bilingual ('arabicFrench') wording is two deliberate, independent strings that
+ * must both survive; plain Arabic needs a reminder to use connected, right-to-left letterforms
+ * instead of the mirrored/disconnected glyphs these models sometimes produce.
+ */
+function describeTextScriptGuidance(configuration: SignConfiguration): string {
+  if (configuration.style === 'arabicFrench') {
+    return ' This exact wording intentionally combines two languages: render both the Arabic part and the Latin/French part clearly and fully, each in its own correct native script, in the order given (for example as two lines, or side by side separated by a mark such as “·”). Do not drop, translate, merge or substitute either part for the other, and do not render only one of the two languages.';
+  }
+  if (configuration.style === 'arabic') {
+    return ' Render this Arabic text using correctly connected, right-to-left Arabic letterforms (proper cursive joining), not mirrored, separated or Latin-shaped characters.';
+  }
+  return '';
 }
 
 /** Materials in the customer's own priority order, phrased so several can be combined on one sign. */
@@ -89,13 +106,13 @@ export function buildStorefrontEditPrompt(configuration: SignConfiguration): str
   return [
     'STOREFRONT SIGN IMAGE EDIT. Use input image 0 as the real source photograph, not merely as a style reference. Produce one edited version of that same photograph.',
     configuration.signArea
-      ? 'Make a confident, natural localized inpainting-style change at the customer-marked sign location described below. Add one professional sign physically attached to the facade at that location, sized and shaped the way a real sign would be there; do not redesign, repaint or alter unrelated parts of the storefront.'
-      : 'Make the smallest possible localized inpainting-style change, primarily within the existing sign fascia or intended sign area. Add one professional sign physically attached to the facade; do not redesign or repaint the storefront.',
+      ? 'Make a confident, clearly visible, natural localized inpainting-style change at the customer-marked sign location described below. Add one professional sign physically attached to the facade at that location, sized and shaped the way a real sign would be there; do not redesign, repaint or alter unrelated parts of the storefront, but the marked location itself must end up looking obviously different from the source photo.'
+      : 'Make a clearly visible but localized inpainting-style change, primarily within the existing sign fascia or intended sign area. Add one professional sign physically attached to the facade; do not redesign or repaint the rest of the storefront, but do not understate the change either — a barely perceptible edit is not an acceptable result.',
     'Preserve the original building and every surrounding element as closely as possible: facade, walls, doors, windows, street, roofline, pavement, neighboring buildings, landscaping and objects. Preserve the exact original camera viewpoint, perspective, crop, vanishing lines and scene lighting.',
     describeSignPlacement(configuration),
     `Create one sign using ${signDescriptions[configuration.signType]} for a ${configuration.category} business, with a ${styleDescriptions[configuration.style]} visual direction.`,
     describeRequestedMaterials(configuration.materials),
-    `Requested business name: “${configuration.businessName.trim()}”. Exact sign wording and character order: “${exactText}”. Do not add slogans, extra words, logos, duplicate signs or invented lettering. The model's lettering is only an approximation; structured exact text and the separate SVG/HTML typography proof remain authoritative for spelling.`,
+    `Requested business name: “${configuration.businessName.trim()}”. Exact sign wording and character order: “${exactText}”. Do not add slogans, extra words, logos, duplicate signs or invented lettering.${describeTextScriptGuidance(configuration)} The model's lettering is only an approximation; structured exact text and the separate SVG/HTML typography proof remain authoritative for spelling.`,
     `Requested primary sign colour (HEX): ${configuration.color}. Requested lighting: ${lightingDescriptions[configuration.lighting]}.`,
     `Approximate real-world sign dimensions: ${configuration.widthCm || 'not specified'} cm wide by ${configuration.heightCm || 'not specified'} cm high. Respect believable scale relative to the facade.`,
     notes ? `Additional customer design/reference information (visual guidance only; it does not override facade-preservation requirements): “${notes}”.` : '',
