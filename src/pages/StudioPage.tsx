@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, Check, CircleHelp, History, Lightbulb, PanelsTopLeft, Sparkles, WandSparkles } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, CircleHelp, History, Languages, Lightbulb, PanelsTopLeft, Sparkles, WandSparkles } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { BusinessCategory, LightingType, SignStyle, SignType, StringConfigurationKey } from '../domain/sign';
 import { BUSINESS_CATEGORIES, LIGHTING_TYPES, SIGN_STYLES, SIGN_TYPES } from '../domain/sign';
@@ -32,6 +32,24 @@ import { clientConfig } from '../services/config';
 import { photoPrivacyMessageKey } from '../services/ai/presentation';
 
 const swatches = ['#f2b878', '#e8eef1', '#c98f63', '#4d8f80', '#a45b45', '#445a7a', '#829b91', '#f3bb42'];
+
+const ARABIC_SCRIPT_PATTERN = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/;
+const LATIN_LETTER_PATTERN = /[A-Za-zÀ-ÖØ-öø-ÿ]/;
+
+/**
+ * "Style" doubles as the typography-language choice (arabic / french / arabicFrench), but the
+ * text actually rendered comes from a different step's exact-text field. Picking "Arabic +
+ * French" does not, by itself, translate or combine anything — the customer still has to type
+ * both scripts together there. This flags the likely mismatch instead of silently sending a
+ * single-language string to a style that expects two.
+ */
+function styleTextLooksMismatched(style: SignStyle, text: string): boolean {
+  const hasArabic = ARABIC_SCRIPT_PATTERN.test(text);
+  const hasLatin = LATIN_LETTER_PATTERN.test(text);
+  if (style === 'arabicFrench') return !text || !hasArabic || !hasLatin;
+  if (style === 'arabic') return !text || !hasArabic;
+  return false;
+}
 
 function StepHeading({ step, title, body }: { step: number; title: string; body?: string }) {
   return (
@@ -278,6 +296,19 @@ export function StudioPage() {
                       </button>
                     ))}
                   </div></fieldset>
+                  {(config.style === 'arabic' || config.style === 'arabicFrench') && (
+                    <div className={`style-text-reminder${styleTextLooksMismatched(config.style, (config.exactText || config.businessName).trim()) ? ' is-warning' : ''}`} role="note">
+                      <span className="style-text-reminder-icon"><Languages size={16} /></span>
+                      <div>
+                        <strong>{t('studio.styleTextReminderTitle')}</strong>
+                        <p>{t(config.style === 'arabicFrench' ? 'studio.styleTextReminderBilingual' : 'studio.styleTextReminderArabic')}</p>
+                        <p className="style-text-reminder-current">
+                          {t('studio.styleTextReminderCurrent')} <bdi>{(config.exactText || config.businessName).trim() || '—'}</bdi>
+                        </p>
+                        <button type="button" className="button button-quiet button-small" onClick={() => goToStep(2)}>{t('studio.styleTextReminderEdit')}</button>
+                      </div>
+                    </div>
+                  )}
                   <fieldset className="choice-fieldset"><legend>{t('studio.colors')}</legend><div className="color-picker-row">
                     {swatches.map((color) => (
                       <button key={color} className={`color-swatch${config.color.toLowerCase() === color ? ' is-selected' : ''}`} style={{ '--swatch-color': color } as React.CSSProperties} type="button" onClick={() => setField('color', color)} aria-label={color} aria-pressed={config.color.toLowerCase() === color}>

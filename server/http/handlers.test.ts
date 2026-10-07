@@ -131,7 +131,7 @@ describe('server API safety defaults', () => {
       expect(body.status).toBe('GENERATED');
       expect(body.providerId).toBe('cloudflare-flux-2-klein-9b');
       expect(body.imageUrl).toMatch(/^data:image\/png;base64,/);
-      expect(body.promptVersion).toBe('storefront-inpaint-v3');
+      expect(body.promptVersion).toBe('storefront-inpaint-v4');
       expect(url).toBe('https://api.cloudflare.com/client/v4/accounts/0123456789abcdef0123456789abcdef/ai/run/@cf/black-forest-labs/flux-2-klein-9b');
       expect(prompt).toContain('ATELIER SABLE · حرف');
       expect(prompt).toContain('Keep the stone arch untouched.');
@@ -170,7 +170,7 @@ describe('server API safety defaults', () => {
 
       expect(response.status).toBe(200);
       expect(prompt).toContain('centered at about (32%, 18%)');
-      expect(prompt).toContain('fully removed and replaced with one confident');
+      expect(prompt).toContain('fully removed, covered or wrapped and replaced with one confident');
     } finally {
       vi.unstubAllGlobals();
     }

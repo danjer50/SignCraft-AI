@@ -76,7 +76,16 @@ describe('storefront image-edit architecture', () => {
     expect(prompt).toContain('centered at about (28%, 21%)');
     expect(prompt).toContain('(10%, 15%) to (46%, 27%)');
     expect(prompt).toContain('not an exact crop, mask or size');
-    expect(prompt).toContain('confident, natural localized');
+    expect(prompt).toContain('confident, clearly visible, natural localized');
+  });
+
+  it('demands a clearly visible result in the marked area instead of a barely-perceptible edit', () => {
+    const prompt = buildStorefrontEditPrompt({
+      ...configuration,
+      signArea: { strokes: [{ points: [{ xPercent: 10, yPercent: 15 }, { xPercent: 45, yPercent: 27 }] }] },
+    });
+    expect(prompt).toContain('MUST look clearly, unmistakably different from the source photo');
+    expect(prompt).toContain('is a failed edit');
   });
 
   it('spans every painted stroke, not just the first one, when describing the marked location', () => {
@@ -98,19 +107,38 @@ describe('storefront image-edit architecture', () => {
       signArea: { strokes: [{ points: [{ xPercent: 10, yPercent: 15 }, { xPercent: 45, yPercent: 27 }] }] },
       replaceExistingSurface: true,
     });
-    expect(prompt).toContain('fully removed and replaced with one confident');
-    expect(prompt).toContain('do not leave the old element partially visible');
+    expect(prompt).toContain('fully removed, covered or wrapped and replaced with one confident');
+    expect(prompt).toContain('its texture or its colour partially visible underneath or around the new one');
   });
 
-  it('keeps the default conservative instruction when no area was marked', () => {
+  it('keeps asking for a visible change even without a marked area, instead of an understated edit', () => {
     const prompt = buildStorefrontEditPrompt(configuration);
-    expect(prompt).toContain('smallest possible localized inpainting-style change');
+    expect(prompt).toContain('clearly visible but localized inpainting-style change');
+    expect(prompt).toContain('a barely perceptible edit is not an acceptable result');
     expect(prompt).not.toContain('marked sign area');
   });
 
   it('still asks for a localized change even when "replace existing surface" is set without a marked area', () => {
     const prompt = buildStorefrontEditPrompt({ ...configuration, replaceExistingSurface: true });
     expect(prompt).toContain('currently holds something that should be fully covered or replaced');
+  });
+
+  it('instructs the model to render both languages when the bilingual Arabic + French style is chosen', () => {
+    const prompt = buildStorefrontEditPrompt({ ...configuration, style: 'arabicFrench', exactText: 'مقهى · CAFÉ' });
+    expect(prompt).toContain('مقهى · CAFÉ');
+    expect(prompt).toContain('intentionally combines two languages');
+    expect(prompt).toContain('do not render only one of the two languages');
+  });
+
+  it('asks for correctly connected Arabic letterforms when the Arabic-only style is chosen', () => {
+    const prompt = buildStorefrontEditPrompt({ ...configuration, style: 'arabic', exactText: 'مقهى' });
+    expect(prompt).toContain('correctly connected, right-to-left Arabic letterforms');
+  });
+
+  it('adds no extra script guidance for styles unrelated to Arabic or bilingual text', () => {
+    const prompt = buildStorefrontEditPrompt({ ...configuration, style: 'modern' });
+    expect(prompt).not.toContain('intentionally combines two languages');
+    expect(prompt).not.toContain('connected, right-to-left Arabic letterforms');
   });
 
   it('preserves exact sign text including intentional surrounding whitespace', () => {
