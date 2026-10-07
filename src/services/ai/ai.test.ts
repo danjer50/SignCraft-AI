@@ -37,7 +37,7 @@ describe('storefront image-edit architecture', () => {
   });
 
   it('leads with a mandatory visible edit and versions the strengthened prompt', () => {
-    expect(SIGNCRAFT_PROMPT_VERSION).toBe('storefront-inpaint-v5');
+    expect(SIGNCRAFT_PROMPT_VERSION).toBe('storefront-inpaint-v6');
     const prompt = buildStorefrontEditPrompt(configuration);
     expect(prompt.startsWith('MANDATORY EDIT: return the source photograph with the new storefront sign visibly added.')).toBe(true);
     expect(prompt).toContain('Returning the source photograph unchanged');

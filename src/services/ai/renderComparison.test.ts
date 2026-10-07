@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { isUnchangedRender } from './renderComparison';
+import { isOverEditedRender, isUnchangedRender } from './renderComparison';
 
 const SIDE = 96;
 const imageUrl = 'data:image/png;base64,iVBORw0KGgo=';
@@ -115,6 +115,54 @@ describe('local render comparison', () => {
     mockCanvases(source, edited);
     mockBitmaps();
     expect(await isUnchangedRender(preparedPhoto, imageUrl)).toBe(false);
+  });
+
+  it('rejects a broad whole-scene redraw when no placement was marked', async () => {
+    const source = grid();
+    const redrawn = source.slice();
+    for (let offset = 0; offset < redrawn.length; offset += 4) {
+      redrawn[offset] = redrawn[offset] < 128 ? redrawn[offset] + 70 : redrawn[offset] - 70;
+      redrawn[offset + 1] = 180;
+      redrawn[offset + 2] = 60;
+    }
+    mockCanvases(source, redrawn);
+    mockBitmaps();
+    expect(await isOverEditedRender(preparedPhoto, imageUrl, null)).toBe(true);
+  });
+
+  it('accepts a strong localized edit inside the customer-marked area', async () => {
+    const source = grid();
+    const edited = source.slice();
+    for (let y = 30; y < 45; y += 1) {
+      for (let x = 25; x < 70; x += 1) {
+        const offset = (y * SIDE + x) * 4;
+        edited[offset] = 240;
+        edited[offset + 1] = 180;
+        edited[offset + 2] = 40;
+      }
+    }
+    mockCanvases(source, edited);
+    mockBitmaps();
+    const markedArea = { strokes: [{ points: [{ xPercent: 25, yPercent: 30 }, { xPercent: 70, yPercent: 45 }] }] };
+    expect(await isOverEditedRender(preparedPhoto, imageUrl, markedArea)).toBe(false);
+  });
+
+  it('rejects widespread changes outside the customer-marked area', async () => {
+    const source = grid();
+    const edited = source.slice();
+    for (let y = 0; y < SIDE; y += 1) {
+      for (let x = 0; x < SIDE; x += 1) {
+        if (x >= 35 && x <= 60 && y >= 30 && y <= 45) continue;
+        const offset = (y * SIDE + x) * 4;
+        edited[offset] = 220;
+        edited[offset + 1] = 40;
+        edited[offset + 2] = 40;
+      }
+    }
+    mockCanvases(source, edited);
+    mockBitmaps();
+    const markedArea = { strokes: [{ points: [{ xPercent: 35, yPercent: 30 }, { xPercent: 60, yPercent: 45 }] }] };
+    expect(await isOverEditedRender(preparedPhoto, imageUrl, markedArea)).toBe(true);
   });
 
   it('fails open if canvas is unavailable without starting a decode', async () => {

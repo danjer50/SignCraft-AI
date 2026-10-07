@@ -114,6 +114,7 @@ describe('provider chain resolution', () => {
       { id: 'groq', reason: 'unsupported' },
       { id: 'openrouter', reason: 'unconfigured' },
       { id: 'cloudflare-flux', reason: 'unconfigured' },
+      { id: 'pollinations', reason: 'unconfigured' },
     ]);
   });
 
@@ -126,6 +127,7 @@ describe('provider chain resolution', () => {
       { id: 'groq', reason: 'unsupported' },
       { id: 'gemini', reason: 'unconfigured' },
       { id: 'openrouter', reason: 'unconfigured' },
+      { id: 'pollinations', reason: 'unconfigured' },
     ]);
   });
 
@@ -172,19 +174,37 @@ describe('provider chain resolution', () => {
     expect(chain.attempts.map((step) => step.entry.id)).toEqual(['groq']);
   });
 
-  it('keeps Pollinations out of the default chain entirely, even when its key is present', () => {
-    const chain = resolveProviderChain('image-edit', allFour);
+  it('detects a Pollinations-only server without requiring a separate order variable', () => {
+    const chain = resolveProviderChain('image-edit', { POLLINATIONS_API_KEY: POLLINATIONS_KEY });
 
-    expect(chain.attempts.map((step) => step.entry.id)).toEqual(['gemini', 'openrouter']);
-    expect(chain.attempts.some((step) => step.entry.id === 'pollinations')).toBe(false);
-    expect(chain.skipped.some((entry) => entry.id === 'pollinations')).toBe(false);
+    expect(chain.attempts.map((step) => step.entry.id)).toEqual(['pollinations']);
+    expect(chain.attempts[0].requested).toBe('default');
   });
 
-  it('schedules Pollinations only when an explicit order names it', () => {
+  it('keeps Pollinations after the existing configured providers by default', () => {
+    const chain = resolveProviderChain('image-edit', allFour);
+
+    expect(chain.attempts.map((step) => step.entry.id)).toEqual(['gemini', 'openrouter', 'pollinations']);
+  });
+
+  it('honours an explicit Pollinations priority and appends configured providers it omitted', () => {
     const chain = resolveProviderChain('image-edit', { ...allFour, AI_PROVIDER_ORDER: 'pollinations,gemini' });
 
-    expect(chain.attempts.map((step) => step.entry.id)).toEqual(['pollinations', 'gemini']);
+    expect(chain.attempts.map((step) => step.entry.id)).toEqual(['pollinations', 'gemini', 'openrouter']);
     expect(chain.attempts[0].requested).toBe('listed');
+    expect(chain.attempts[2].requested).toBe('default');
+  });
+
+  it('does not let a stale order hide a newly configured Pollinations adapter', () => {
+    const chain = resolveProviderChain('image-edit', {
+      POLLINATIONS_API_KEY: POLLINATIONS_KEY,
+      AI_PROVIDER_ORDER: 'groq,gemini,openrouter,cloudflare-flux',
+    });
+
+    expect(chain.attempts.map((step) => step.entry.id)).toEqual([
+      'gemini', 'openrouter', 'cloudflare-flux', 'pollinations',
+    ]);
+    expect(chain.attempts.at(-1)?.requested).toBe('default');
   });
 
   it('honours AI_PROVIDER=pollinations as a pin, with a configured provider as fallback', () => {
@@ -234,7 +254,7 @@ describe('image-edit fallback chain', () => {
 
     expect(result).toMatchObject({ status: 'GENERATED', providerId: 'openrouter' });
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(logSpy).toHaveBeenCalledWith('[AI] task=image-edit chain=[gemini, openrouter] skipped=[groq (unsupported), cloudflare-flux (unconfigured)]');
+    expect(logSpy).toHaveBeenCalledWith('[AI] task=image-edit chain=[gemini, openrouter] skipped=[groq (unsupported), cloudflare-flux (unconfigured), pollinations (unconfigured)]');
     expect(logSpy).toHaveBeenCalledWith('[AI] trying provider: gemini (task=image-edit, model=gemini-3.1-flash-image)');
     expect(logSpy).toHaveBeenCalledWith('[AI] gemini failed (AI_UNCHANGED_IMAGE)');
     expect(logSpy).toHaveBeenCalledWith('[AI] falling back to openrouter');
@@ -517,12 +537,17 @@ describe('Pollinations as a fallback image provider', () => {
     expect(logSpy).toHaveBeenCalledWith('[AI] pollinations failed (AI_NOT_CONFIGURED)');
   });
 
-  it('ignores a Pollinations key when no order or pin activates it', async () => {
-    const fetchMock = scriptedFetch({ gemini: geminiImageResponse });
-    const result = await runImageEditTask(makeInput(), allFour, { fetchImpl: fetchMock });
+  it('uses Pollinations with only its existing key and no order or pin', async () => {
+    const fetchMock = scriptedFetch({ pollinations: pollinationsImageResponse });
+    const result = await runImageEditTask(
+      makeInput(),
+      { POLLINATIONS_API_KEY: POLLINATIONS_KEY },
+      { fetchImpl: fetchMock },
+    );
 
     expect(result.status).toBe('GENERATED');
-    if (result.status === 'GENERATED') expect(result.providerId).toBe('gemini');
-    expect(fetchMock.mock.calls.some((call) => String(call[0]).includes('pollinations'))).toBe(false);
+    if (result.status === 'GENERATED') expect(result.providerId).toBe('pollinations');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0][0])).toBe('https://gen.pollinations.ai/v1/images/edits');
   });
 });

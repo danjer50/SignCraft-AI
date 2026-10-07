@@ -5,7 +5,7 @@ import { DemoAIProvider } from './demoProvider';
 import type { ImageEditingRequest } from './contracts';
 import { buildStorefrontEditPrompt, SIGNCRAFT_PROMPT_VERSION } from './promptBuilder';
 import { prepareCloudflareReferenceImage } from './imagePreparation';
-import { isUnchangedRender } from './renderComparison';
+import { isOverEditedRender, isUnchangedRender } from './renderComparison';
 
 function normalizedConfiguration(configuration: SignConfiguration): SignConfiguration {
   return {
@@ -92,6 +92,14 @@ export async function generateStorefrontConcept(
           'AI_UNCHANGED_IMAGE',
           'SENT_TO_SERVER',
           'The AI service returned the source photo without a visible change. No concept was created.',
+          typeof body.providerId === 'string' ? body.providerId : 'server-ai',
+        );
+      }
+      if (await isOverEditedRender(preparedImage, body.imageUrl as string, configuration.signArea)) {
+        return errorResult(
+          'AI_INVALID_RESPONSE',
+          'SENT_TO_SERVER',
+          'The AI service redrew too much of the storefront instead of adding one localized sign. The result was rejected; mark the sign area and retry.',
           typeof body.providerId === 'string' ? body.providerId : 'server-ai',
         );
       }

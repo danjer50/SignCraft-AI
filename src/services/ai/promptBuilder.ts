@@ -1,7 +1,7 @@
 import type { SignConfiguration, SignMaterial } from '../../domain/sign.js';
 import { computeSignAreaBounds, normalizeMaterials } from '../../domain/sign.js';
 
-export const SIGNCRAFT_PROMPT_VERSION = 'storefront-inpaint-v5';
+export const SIGNCRAFT_PROMPT_VERSION = 'storefront-inpaint-v6';
 
 const signDescriptions: Record<SignConfiguration['signType'], string> = {
   threeD: 'raised three-dimensional lettering',
@@ -105,6 +105,7 @@ export function buildStorefrontEditPrompt(configuration: SignConfiguration): str
   const notes = configuration.notes.trim();
   return [
     'MANDATORY EDIT: return the source photograph with the new storefront sign visibly added. Returning the source photograph unchanged, or with only imperceptible differences, is a failed answer. Return a final edited image, not an echoed input or an intermediate thought image.',
+    `PRIMARY REQUIRED SUBJECT: install one obvious, complete storefront sign whose visible wording is “${exactText}”. The final image must visibly contain this sign; changing the building without adding the sign is a failed answer.`,
     'STOREFRONT SIGN IMAGE EDIT. Use input image 0 as the real source photograph, not merely as a style reference. Produce one edited version of that same photograph.',
     configuration.signArea
       ? 'Make a confident, clearly visible, natural localized inpainting-style change at the customer-marked sign location described below. Add one professional sign physically attached to the facade at that location, sized and shaped the way a real sign would be there; do not redesign, repaint or alter unrelated parts of the storefront, but the marked location itself must end up looking obviously different from the source photo.'

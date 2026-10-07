@@ -77,10 +77,11 @@ function parseProviderOrder(value: string | undefined): string[] | null {
  *
  * - `AI_PROVIDER` pins a single provider to the front (its legacy meaning). Every other configured
  *   provider still follows as a fallback.
- * - `AI_PROVIDER_ORDER` sets the order; without it the default order is used.
- * - A provider that is only in the chain because of the default order and has no credentials is
- *   skipped silently; one the operator explicitly pinned or listed is still attempted so its own
- *   "not configured" message is reported instead of a vague error.
+ * - `AI_PROVIDER_ORDER` sets priority; configured providers omitted by a stale order are appended
+ *   as fallbacks. This prevents a present credential from being misreported as zero providers.
+ * - A provider that is only in the chain because of the default/fallback order and has no
+ *   credentials is skipped silently; one the operator explicitly pinned or listed is still
+ *   attempted so its own "not configured" message is reported instead of a vague error.
  * - A provider that cannot serve the task is never called for it.
  */
 export function resolveProviderChain(task: AITask, environment: AIEnvironment = {}): ResolvedChain {
@@ -90,7 +91,17 @@ export function resolveProviderChain(task: AITask, environment: AIEnvironment = 
   if (requestedOrder && !explicitOrder) {
     log(`AI_PROVIDER_ORDER does not name any known provider; using the default order (${DEFAULT_PROVIDER_ORDER.join(',')})`);
   }
-  const order = explicitOrder ?? [...DEFAULT_PROVIDER_ORDER];
+  // Treat AI_PROVIDER_ORDER as an order, not an allowlist. Older deployments commonly keep the
+  // value that existed before a provider adapter was added; appending only omitted providers that
+  // are actually configured preserves the chosen priority without hiding usable credentials.
+  const configuredFallbacks = explicitOrder
+    ? AI_PROVIDER_ENTRIES
+      .filter((entry) => entry.capabilities.includes(task)
+        && entry.isConfigured(environment)
+        && !explicitOrder.includes(entry.id))
+      .map((entry) => entry.id)
+    : [];
+  const order = explicitOrder ? [...explicitOrder, ...configuredFallbacks] : [...DEFAULT_PROVIDER_ORDER];
 
   const pinnedName = environment.AI_PROVIDER?.trim().toLowerCase();
   const pinnedRequest = pinnedName && pinnedName !== 'demo' ? pinnedName : undefined;
