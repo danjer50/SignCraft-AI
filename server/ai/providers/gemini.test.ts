@@ -87,6 +87,48 @@ describe('Gemini image provider', () => {
     }
   });
 
+  it('rejects an echoed source photo as a failed edit, never as a generated concept', async () => {
+    const input = makeInput();
+    const fetchMock = vi.fn<typeof fetch>(async () => imageResponse(Buffer.from(input.image.bytes).toString('base64'), 'image/jpeg'));
+    const result = await new GeminiImageProvider(env, { fetchImpl: fetchMock }).generate(input);
+
+    expect(result).toMatchObject({ status: 'ERROR', providerId: 'gemini', errorCode: 'AI_UNCHANGED_IMAGE' });
+    expect(result).not.toHaveProperty('imageUrl');
+    expect(JSON.stringify(result)).toContain('No concept was created');
+    expect(JSON.stringify(result)).not.toContain(apiKey);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('skips a source echo and a thought image to select the actual final edit', async () => {
+    const input = makeInput();
+    const final = tinyPng();
+    final[final.length - 1] = 0x20;
+    const finalBase64 = Buffer.from(final).toString('base64');
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({
+      candidates: [{ content: { parts: [
+        { inlineData: { mimeType: 'image/jpeg', data: Buffer.from(input.image.bytes).toString('base64') } },
+        { thought: true, inlineData: { mimeType: 'image/png', data: Buffer.from(tinyPng()).toString('base64') } },
+        { inlineData: { mimeType: 'image/png', data: finalBase64 } },
+      ] } }],
+    }), { status: 200 }));
+    const result = await new GeminiImageProvider(env, { fetchImpl: fetchMock }).generate(input);
+
+    expect(result).toMatchObject({ status: 'GENERATED', imageUrl: `data:image/png;base64,${finalBase64}` });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not present an intermediate thought image when no final edit was returned', async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({
+      candidates: [{ content: { parts: [{
+        thought: true, inlineData: { mimeType: 'image/png', data: Buffer.from(tinyPng()).toString('base64') },
+      }] } }],
+    }), { status: 200 }));
+    const result = await new GeminiImageProvider(env, { fetchImpl: fetchMock }).generate(makeInput());
+
+    expect(result).toMatchObject({ status: 'ERROR', errorCode: 'AI_INVALID_RESPONSE' });
+    expect(result).not.toHaveProperty('imageUrl');
+  });
+
   it('honours GEMINI_MODEL, so a retired model id is an environment change', async () => {
     const fetchMock = vi.fn<typeof fetch>(async () => imageResponse(Buffer.from(tinyPng()).toString('base64')));
     await new GeminiImageProvider({ ...env, GEMINI_MODEL: 'gemini-3.1-flash-lite-image' }, { fetchImpl: fetchMock }).generate(makeInput());

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { photoPrivacyMessageKey } from './presentation';
+import { aiErrorMessageKey, photoPrivacyMessageKey } from './presentation';
 import type { AIConceptResult } from '../../domain/sign';
 
 const generated: AIConceptResult = {
@@ -27,6 +27,14 @@ describe('photo privacy messaging state', () => {
       status: 'ERROR', providerId: 'api', errorCode: 'AI_NETWORK_ERROR', message: 'unknown',
       createdAt: new Date().toISOString(), sourceImageTransfer: 'UNKNOWN',
     }, 'api', 'local')).toBe('studio.photoUnknownNotice');
+  });
+
+  it('localizes an unchanged-image failure and reports submission, not successful processing', () => {
+    expect(aiErrorMessageKey('AI_UNCHANGED_IMAGE')).toBe('ai.errorUnchangedImage');
+    expect(photoPrivacyMessageKey({
+      status: 'ERROR', providerId: 'gemini', errorCode: 'AI_UNCHANGED_IMAGE', message: 'unchanged',
+      createdAt: new Date().toISOString(), sourceImageTransfer: 'SENT_TO_SERVER',
+    }, 'api', 'local')).toBe('studio.photoSentNotice');
   });
 
   it('explains quote-only and combined API transfer modes before submission', () => {

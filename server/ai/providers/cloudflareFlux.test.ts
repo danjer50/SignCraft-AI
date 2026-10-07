@@ -81,6 +81,19 @@ describe('Cloudflare FLUX.2 Klein 9B provider', () => {
     expect(new Uint8Array(await inputImage.arrayBuffer())).toEqual(makeInput().image.bytes);
   });
 
+  it('rejects a byte-identical source photo even when Cloudflare reports success', async () => {
+    const input = makeInput();
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({
+      success: true, result: { image: Buffer.from(input.image.bytes).toString('base64') },
+    }), { status: 200 }));
+    const result = await new CloudflareFluxProvider(env, fetchMock).generate(input);
+
+    expect(result).toMatchObject({ status: 'ERROR', errorCode: 'AI_UNCHANGED_IMAGE' });
+    expect(result).not.toHaveProperty('imageUrl');
+    expect(JSON.stringify(result)).not.toContain(env.CLOUDFLARE_API_TOKEN);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps output dimensions within the model range for an extreme panorama', async () => {
     const fetchMock = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({
       success: true,

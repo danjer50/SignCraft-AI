@@ -10,7 +10,10 @@ vi.mock('./imagePreparation', () => ({
   prepareCloudflareReferenceImage: vi.fn(async () => new File(['prepared'], 'storefront.jpg', { type: 'image/jpeg' })),
 }));
 
+vi.mock('./renderComparison', () => ({ isUnchangedRender: vi.fn(async () => false) }));
+
 import { AI_REQUEST_TIMEOUT_MS, generateStorefrontConcept } from './client';
+import { isUnchangedRender } from './renderComparison';
 import { prepareCloudflareReferenceImage } from './imagePreparation';
 
 const configuration = {
@@ -30,6 +33,7 @@ function mockFetch(implementation: typeof fetch) {
 }
 
 afterEach(() => {
+  vi.clearAllMocks();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -55,6 +59,32 @@ describe('AI client failure recovery in API mode', () => {
     expect((init?.body as FormData).get('configuration')).toContain('"materials":["acrylic","ledModules"]');
   });
 
+  it('turns a visually unchanged response into an honest failure before storing GENERATED', async () => {
+    const imageUrl = 'data:image/png;base64,iVBORw0KGgo=';
+    const fetchMock = mockFetch(async () => jsonResponse({ status: 'GENERATED', providerId: 'gemini', imageUrl }));
+    vi.mocked(isUnchangedRender).mockResolvedValueOnce(true);
+
+    const result = await generateStorefrontConcept({ sourceImage, configuration });
+
+    expect(result).toMatchObject({ status: 'ERROR', errorCode: 'AI_UNCHANGED_IMAGE', providerId: 'gemini', sourceImageTransfer: 'SENT_TO_SERVER' });
+    expect(result).not.toHaveProperty('imageUrl');
+    expect(isUnchangedRender).toHaveBeenCalledWith(await vi.mocked(prepareCloudflareReferenceImage).mock.results[0].value, imageUrl);
+    // Do not spend another generation request on a browser-side rejection.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves the server unchanged-image error and never invents a render', async () => {
+    mockFetch(async () => jsonResponse({
+      status: 'ERROR', code: 'AI_UNCHANGED_IMAGE', providerId: 'gemini',
+      message: 'Gemini returned the source photo unchanged. No concept was created.',
+    }, 502));
+    const result = await generateStorefrontConcept({ sourceImage, configuration });
+
+    expect(result).toMatchObject({ status: 'ERROR', errorCode: 'AI_UNCHANGED_IMAGE', sourceImageTransfer: 'SENT_TO_SERVER' });
+    expect(result).not.toHaveProperty('imageUrl');
+    expect(isUnchangedRender).not.toHaveBeenCalled();
+  });
+
   it('refuses a generated status that carries an unsafe image reference', async () => {
     mockFetch(async () => jsonResponse({
       status: 'GENERATED',
@@ -69,6 +99,7 @@ describe('AI client failure recovery in API mode', () => {
       expect(result.errorCode).toBe('AI_REQUEST_REJECTED');
       expect(result).not.toHaveProperty('imageUrl');
     }
+    expect(isUnchangedRender).not.toHaveBeenCalled();
   });
 
   it('maps a server error code onto a localized, retryable failure', async () => {

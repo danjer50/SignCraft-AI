@@ -7,6 +7,7 @@ import { QuoteDialogContext } from '../components/QuoteDialogContext';
 import { DEFAULT_SIGN_CONFIGURATION } from '../domain/sign';
 import { STUDIO_DRAFT_KEY } from '../services/draftStorage';
 import { ResultPage } from './ResultPage';
+import { messages } from '../i18n/messages';
 
 const tinyImage = 'data:image/png;base64,iVBORw0KGgo=';
 
@@ -88,6 +89,22 @@ describe('result page states', () => {
     expect(screen.getByText('Lettres boîtiers')).toBeInTheDocument();
     expect(screen.getByText(/Étape suivante : devis ou WhatsApp/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Je veux cette enseigne/i })).toBeInTheDocument();
+  });
+
+  it.each(['fr', 'en', 'ar'] as const)('shows an honest unchanged-image failure with no green badge or AI image in %s', (locale) => {
+    localStorage.setItem('signcraft:locale', locale);
+    seedDraft({
+      status: 'ERROR', providerId: 'gemini', errorCode: 'AI_UNCHANGED_IMAGE',
+      message: 'The source photo was returned unchanged. No concept was created.',
+      createdAt: '2026-10-07T09:00:00.000Z', sourceImageTransfer: 'SENT_TO_SERVER',
+    });
+    renderResult();
+
+    expect(screen.getByText(messages[locale]['ai.errorUnchangedImage'])).toBeInTheDocument();
+    expect(screen.queryByText(messages[locale]['result.generated'])).not.toBeInTheDocument();
+    expect(screen.queryByRole('img', { name: messages[locale]['result.after'] })).not.toBeInTheDocument();
+    expect(screen.getAllByRole('img')).toHaveLength(1);
+    expect(screen.queryByText(messages[locale]['result.photoProcessed'])).not.toBeInTheDocument();
   });
 
   it('shows the generated concept beside the original photo when a provider confirmed an image', () => {

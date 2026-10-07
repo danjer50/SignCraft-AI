@@ -1,6 +1,6 @@
 import type { AIErrorCode } from '../../../src/domain/sign.js';
 import { DEFAULT_PROVIDER_TIMEOUT_MS, mapHttpStatusToErrorCode, postMultipart, readProviderMessage } from '../http.js';
-import { decodeProviderBase64Image } from '../imageResult.js';
+import { decodeProviderBase64Image, isUnchangedSource } from '../imageResult.js';
 import type { AIEnvironment, AIProviderOptions, ServerAIImageProvider, ServerAIResult, ServerImageEditInput } from '../types.js';
 
 /**
@@ -32,6 +32,7 @@ function errorMessage(errorCode: AIErrorCode, model: string): string {
     case 'AI_TIMEOUT': return 'Pollinations took too long to respond. No result was confirmed; please retry.';
     case 'AI_PROVIDER_UNAVAILABLE': return 'Pollinations is temporarily unavailable. Please retry.';
     case 'AI_INVALID_RESPONSE': return 'Pollinations did not return a usable image. No concept was created.';
+    case 'AI_UNCHANGED_IMAGE': return 'Pollinations returned the source photo unchanged. No concept was created.';
     case 'AI_IMAGE_PREPARATION': return 'The storefront image could not be prepared. Your original photo remains unchanged.';
     case 'AI_NETWORK_ERROR': return 'Pollinations could not be reached. Photo receipt is unconfirmed.';
     case 'AI_REQUEST_REJECTED': return 'Pollinations rejected this request. Review the sign details and retry.';
@@ -101,11 +102,16 @@ export class PollinationsImageProvider implements ServerAIImageProvider {
     }
     if (!body || typeof body !== 'object' || !Array.isArray(body.data)) return failure('AI_INVALID_RESPONSE');
 
+    let sawUnchangedSource = false;
     for (const image of body.data) {
       const base64 = image.b64_json;
       if (typeof base64 !== 'string') continue;
       const decoded = decodeProviderBase64Image(base64);
       if (!decoded) return failure('AI_INVALID_RESPONSE');
+      if (isUnchangedSource(decoded, input.image.bytes)) {
+        sawUnchangedSource = true;
+        continue;
+      }
       return {
         status: 'GENERATED',
         providerId: this.id,
@@ -115,6 +121,6 @@ export class PollinationsImageProvider implements ServerAIImageProvider {
     }
     // A URL-only result is deliberately not followed: fetching a provider-supplied URL would let a
     // response steer the server at an arbitrary host. The adapter asks for base64 instead.
-    return failure('AI_INVALID_RESPONSE');
+    return failure(sawUnchangedSource ? 'AI_UNCHANGED_IMAGE' : 'AI_INVALID_RESPONSE');
   }
 }

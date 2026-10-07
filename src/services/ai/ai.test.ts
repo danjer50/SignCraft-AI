@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_SIGN_CONFIGURATION, normalizeMaterials } from '../../domain/sign';
 import { DemoAIProvider } from './demoProvider';
 import type { ImageEditingRequest } from './contracts';
-import { buildStorefrontEditPrompt } from './promptBuilder';
+import { buildStorefrontEditPrompt, SIGNCRAFT_PROMPT_VERSION } from './promptBuilder';
 
 const configuration = {
   ...DEFAULT_SIGN_CONFIGURATION,
@@ -34,6 +34,14 @@ describe('storefront image-edit architecture', () => {
     expect(prompt).toContain('ATELIER LUNE · حروف');
     expect(prompt).toContain('structured exact text and the separate SVG/HTML typography proof remain authoritative for spelling');
     expect(prompt).toContain('Do not add any extra windows');
+  });
+
+  it('leads with a mandatory visible edit and versions the strengthened prompt', () => {
+    expect(SIGNCRAFT_PROMPT_VERSION).toBe('storefront-inpaint-v5');
+    const prompt = buildStorefrontEditPrompt(configuration);
+    expect(prompt.startsWith('MANDATORY EDIT: return the source photograph with the new storefront sign visibly added.')).toBe(true);
+    expect(prompt).toContain('Returning the source photograph unchanged');
+    expect(prompt).toContain('is a failed answer');
   });
 
   it('describes every requested material, in the customer’s own priority order', () => {

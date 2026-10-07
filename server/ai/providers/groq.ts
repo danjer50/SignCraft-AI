@@ -19,6 +19,7 @@ function errorMessage(errorCode: AIErrorCode, model: string): string {
     case 'AI_TIMEOUT': return 'Groq took too long to respond.';
     case 'AI_PROVIDER_UNAVAILABLE': return 'Groq is temporarily unavailable.';
     case 'AI_INVALID_RESPONSE': return 'Groq did not return usable text.';
+    case 'AI_UNCHANGED_IMAGE': return 'The image service returned the source photo unchanged. No concept was created.';
     case 'AI_IMAGE_PREPARATION': return 'The request could not be prepared.';
     case 'AI_NETWORK_ERROR': return 'Groq could not be reached.';
     case 'AI_REQUEST_REJECTED': return 'Groq rejected this request.';

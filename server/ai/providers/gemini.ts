@@ -1,12 +1,12 @@
 import type { AIErrorCode } from '../../../src/domain/sign.js';
 import { DEFAULT_PROVIDER_TIMEOUT_MS, mapHttpStatusToErrorCode, postJson, readProviderMessage } from '../http.js';
-import { bytesToBase64, decodeProviderBase64Image } from '../imageResult.js';
+import { bytesToBase64, decodeProviderBase64Image, isUnchangedSource } from '../imageResult.js';
 import type { AIEnvironment, AIProviderOptions, ServerAIImageProvider, ServerAIResult, ServerImageEditInput } from '../types.js';
 
 export const GEMINI_DEFAULT_MODEL = 'gemini-3.1-flash-image';
 const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models/';
 
-type GeminiPart = { text?: unknown; inlineData?: { mimeType?: unknown; data?: unknown } };
+type GeminiPart = { text?: unknown; thought?: unknown; inlineData?: { mimeType?: unknown; data?: unknown } };
 type GeminiEnvelope = {
   candidates?: Array<{ content?: { parts?: GeminiPart[] }; finishReason?: unknown }>;
   promptFeedback?: { blockReason?: unknown };
@@ -22,6 +22,7 @@ function errorMessage(errorCode: AIErrorCode, model: string): string {
     case 'AI_TIMEOUT': return 'Gemini took too long to respond. No result was confirmed; please retry.';
     case 'AI_PROVIDER_UNAVAILABLE': return 'Gemini is temporarily unavailable. Please retry.';
     case 'AI_INVALID_RESPONSE': return 'Gemini did not return a usable image. No concept was created.';
+    case 'AI_UNCHANGED_IMAGE': return 'Gemini returned the source photo unchanged. No concept was created.';
     case 'AI_IMAGE_PREPARATION': return 'The storefront image could not be prepared. Your original photo remains unchanged.';
     case 'AI_NETWORK_ERROR': return 'Gemini could not be reached. Photo receipt is unconfirmed.';
     case 'AI_REQUEST_REJECTED': return 'Gemini rejected this request. Review the sign details and retry.';
@@ -92,11 +93,18 @@ export class GeminiImageProvider implements ServerAIImageProvider {
     if (!body || typeof body !== 'object') return failure('AI_INVALID_RESPONSE');
     if (body.promptFeedback?.blockReason) return failure('AI_REQUEST_REJECTED');
 
+    let sawUnchangedSource = false;
     for (const part of body.candidates?.[0]?.content?.parts ?? []) {
+      // Thought images are intermediate reasoning, not a final edit for the customer.
+      if (part.thought === true) continue;
       const data = part.inlineData?.data;
       if (typeof data !== 'string') continue;
       const decoded = decodeProviderBase64Image(data);
       if (!decoded) return failure('AI_INVALID_RESPONSE');
+      if (isUnchangedSource(decoded, input.image.bytes)) {
+        sawUnchangedSource = true;
+        continue;
+      }
       return {
         status: 'GENERATED',
         providerId: this.id,
@@ -104,6 +112,6 @@ export class GeminiImageProvider implements ServerAIImageProvider {
         createdAt: new Date().toISOString(),
       };
     }
-    return failure('AI_INVALID_RESPONSE');
+    return failure(sawUnchangedSource ? 'AI_UNCHANGED_IMAGE' : 'AI_INVALID_RESPONSE');
   }
 }

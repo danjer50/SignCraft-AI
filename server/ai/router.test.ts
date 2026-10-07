@@ -222,6 +222,51 @@ describe('image-edit fallback chain', () => {
     expect(logSpy).toHaveBeenCalledWith('[AI] gemini succeeded');
   });
 
+  it('falls back to OpenRouter when Gemini returns the exact source, logging the provider and model', async () => {
+    const input = makeInput();
+    const fetchMock = scriptedFetch({
+      gemini: () => new Response(JSON.stringify({ candidates: [{ content: { parts: [{
+        inlineData: { mimeType: 'image/jpeg', data: Buffer.from(input.image.bytes).toString('base64') },
+      }] } }] }), { status: 200 }),
+      openrouter: openRouterImageResponse,
+    });
+    const result = await runImageEditTask(input, allThree, { fetchImpl: fetchMock });
+
+    expect(result).toMatchObject({ status: 'GENERATED', providerId: 'openrouter' });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(logSpy).toHaveBeenCalledWith('[AI] task=image-edit chain=[gemini, openrouter] skipped=[groq (unsupported), cloudflare-flux (unconfigured)]');
+    expect(logSpy).toHaveBeenCalledWith('[AI] trying provider: gemini (task=image-edit, model=gemini-3.1-flash-image)');
+    expect(logSpy).toHaveBeenCalledWith('[AI] gemini failed (AI_UNCHANGED_IMAGE)');
+    expect(logSpy).toHaveBeenCalledWith('[AI] falling back to openrouter');
+    const logs = JSON.stringify(logSpy.mock.calls);
+    expect(logs).not.toContain(Buffer.from(input.image.bytes).toString('base64'));
+    for (const key of [GEMINI_KEY, OPENROUTER_KEY]) expect(logs).not.toContain(key);
+  });
+
+  it('fails honestly when every image provider in the explicit chain echoes the source', async () => {
+    const input = makeInput();
+    const sourceBase64 = Buffer.from(input.image.bytes).toString('base64');
+    const sourceUrl = `data:image/jpeg;base64,${sourceBase64}`;
+    const fetchMock = scriptedFetch({
+      pollinations: () => new Response(JSON.stringify({ data: [{ b64_json: sourceBase64 }] }), { status: 200 }),
+      gemini: () => new Response(JSON.stringify({ candidates: [{ content: { parts: [{ inlineData: { data: sourceBase64 } }] } }] }), { status: 200 }),
+      openrouter: () => new Response(JSON.stringify({ choices: [{ message: { images: [{ image_url: { url: sourceUrl } }] } }] }), { status: 200 }),
+      cloudflare: () => new Response(JSON.stringify({ success: true, result: { image: sourceBase64 } }), { status: 200 }),
+    });
+    const result = await runImageEditTask(input, {
+      ...allFour, ...cloudflareOnly, AI_PROVIDER_ORDER: 'pollinations,gemini,openrouter,cloudflare-flux',
+    }, { fetchImpl: fetchMock });
+
+    expect(result).toMatchObject({ status: 'ERROR', providerId: 'ai-router', errorCode: 'AI_UNCHANGED_IMAGE' });
+    expect(result).not.toHaveProperty('imageUrl');
+    if (result.status !== 'GENERATED') {
+      for (const provider of ['pollinations', 'gemini', 'openrouter', 'cloudflare-flux']) {
+        expect(result.message).toContain(`${provider}: unchanged source image`);
+      }
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+
   it('falls back to OpenRouter when Gemini is rate-limited', async () => {
     const fetchMock = scriptedFetch({
       gemini: failure(429, 'You exceeded your current quota'),

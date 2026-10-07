@@ -1,6 +1,6 @@
 import type { AIErrorCode } from '../../../src/domain/sign.js';
 import { DEFAULT_PROVIDER_TIMEOUT_MS, mapHttpStatusToErrorCode, postJson, readProviderMessage } from '../http.js';
-import { bytesToBase64, decodeProviderDataUrlImage } from '../imageResult.js';
+import { bytesToBase64, decodeProviderDataUrlImage, isUnchangedSource } from '../imageResult.js';
 import type { AIEnvironment, AIProviderOptions, ServerAIImageProvider, ServerAIResult, ServerImageEditInput } from '../types.js';
 
 /**
@@ -31,6 +31,7 @@ function errorMessage(errorCode: AIErrorCode, model: string): string {
     case 'AI_TIMEOUT': return 'OpenRouter took too long to respond. No result was confirmed; please retry.';
     case 'AI_PROVIDER_UNAVAILABLE': return 'OpenRouter is temporarily unavailable. Please retry.';
     case 'AI_INVALID_RESPONSE': return 'OpenRouter did not return a usable image. No concept was created.';
+    case 'AI_UNCHANGED_IMAGE': return 'OpenRouter returned the source photo unchanged. No concept was created.';
     case 'AI_IMAGE_PREPARATION': return 'The storefront image could not be prepared. Your original photo remains unchanged.';
     case 'AI_NETWORK_ERROR': return 'OpenRouter could not be reached. Photo receipt is unconfirmed.';
     case 'AI_REQUEST_REJECTED': return 'OpenRouter rejected this request. Review the sign details and retry.';
@@ -105,11 +106,16 @@ export class OpenRouterImageProvider implements ServerAIImageProvider {
       return failure(mapHttpStatusToErrorCode(200, providerMessage));
     }
 
+    let sawUnchangedSource = false;
     for (const entry of body.choices?.[0]?.message?.images ?? []) {
       const url = entry.image_url?.url;
       if (typeof url !== 'string') continue;
       const decoded = decodeProviderDataUrlImage(url);
       if (!decoded) return failure('AI_INVALID_RESPONSE');
+      if (isUnchangedSource(decoded, input.image.bytes)) {
+        sawUnchangedSource = true;
+        continue;
+      }
       return {
         status: 'GENERATED',
         providerId: this.id,
@@ -117,6 +123,6 @@ export class OpenRouterImageProvider implements ServerAIImageProvider {
         createdAt: new Date().toISOString(),
       };
     }
-    return failure('AI_INVALID_RESPONSE');
+    return failure(sawUnchangedSource ? 'AI_UNCHANGED_IMAGE' : 'AI_INVALID_RESPONSE');
   }
 }

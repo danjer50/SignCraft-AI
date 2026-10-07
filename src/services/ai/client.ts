@@ -5,6 +5,7 @@ import { DemoAIProvider } from './demoProvider';
 import type { ImageEditingRequest } from './contracts';
 import { buildStorefrontEditPrompt, SIGNCRAFT_PROMPT_VERSION } from './promptBuilder';
 import { prepareCloudflareReferenceImage } from './imagePreparation';
+import { isUnchangedRender } from './renderComparison';
 
 function normalizedConfiguration(configuration: SignConfiguration): SignConfiguration {
   return {
@@ -86,6 +87,14 @@ export async function generateStorefrontConcept(
       body.imageUrl.length <= 17 * 1024 * 1024 &&
       /^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(body.imageUrl);
     if (response.ok && body.status === 'GENERATED' && imageUrlIsSafe) {
+      if (await isUnchangedRender(preparedImage, body.imageUrl as string)) {
+        return errorResult(
+          'AI_UNCHANGED_IMAGE',
+          'SENT_TO_SERVER',
+          'The AI service returned the source photo without a visible change. No concept was created.',
+          typeof body.providerId === 'string' ? body.providerId : 'server-ai',
+        );
+      }
       return {
         status: 'GENERATED',
         providerId: typeof body.providerId === 'string' ? body.providerId : 'server-ai',
