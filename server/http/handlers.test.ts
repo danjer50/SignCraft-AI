@@ -15,7 +15,8 @@ function jpegFixture(width = 32, height = 24): Uint8Array {
   ]);
 }
 
-function makeAiRequest(file: File, configurationOverrides: Partial<SignConfiguration> = {}): Request {
+/** Overrides are loosely typed so a test can deliberately send an invalid payload. */
+function makeAiRequest(file: File, configurationOverrides: Partial<Record<keyof SignConfiguration, unknown>> = {}): Request {
   const form = new FormData();
   form.append('storefrontImage', file, file.name);
   form.append('configuration', JSON.stringify({
@@ -116,7 +117,7 @@ describe('server API safety defaults', () => {
     vi.stubGlobal('fetch', fetchMock);
     try {
       const image = new File([jpegFixture(511, 287)], 'front.jpg', { type: 'image/jpeg' });
-      const response = await handleAiGeneration(makeAiRequest(image), {
+      const response = await handleAiGeneration(makeAiRequest(image, { materials: ['acrylic', 'ledModules'] }), {
         AI_PROVIDER: 'cloudflare-flux',
         CLOUDFLARE_ACCOUNT_ID: '0123456789abcdef0123456789abcdef',
         CLOUDFLARE_API_TOKEN: 'test-only-token-never-real',
@@ -130,10 +131,13 @@ describe('server API safety defaults', () => {
       expect(body.status).toBe('GENERATED');
       expect(body.providerId).toBe('cloudflare-flux-2-klein-9b');
       expect(body.imageUrl).toMatch(/^data:image\/png;base64,/);
-      expect(body.promptVersion).toBe('storefront-inpaint-v2');
+      expect(body.promptVersion).toBe('storefront-inpaint-v3');
       expect(url).toBe('https://api.cloudflare.com/client/v4/accounts/0123456789abcdef0123456789abcdef/ai/run/@cf/black-forest-labs/flux-2-klein-9b');
       expect(prompt).toContain('ATELIER SABLE · حرف');
       expect(prompt).toContain('Keep the stone arch untouched.');
+      expect(prompt).toContain('polished cast acrylic');
+      expect(prompt).toContain('integrated LED modules');
+      expect(prompt).toContain('combine them plausibly on one sign');
       expect(upstreamForm.get('input_image_0')).toBeInstanceOf(Blob);
       expect(upstreamForm.get('width')).toBe('1024');
       expect(upstreamForm.get('height')).toBe('575');
@@ -143,6 +147,80 @@ describe('server API safety defaults', () => {
     }
   });
 
+  it('accepts several materials for one sign and forwards them to the provider prompt', async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify({ success: true, result: { image: Buffer.from(tinyPng).toString('base64') } }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      const image = new File([jpegFixture()], 'front.jpg', { type: 'image/jpeg' });
+      const response = await handleAiGeneration(
+        makeAiRequest(image, { materials: ['stainlessSteel', 'aluminiumComposite', 'neonFlex'] }),
+        {
+          AI_PROVIDER: 'cloudflare-flux',
+          CLOUDFLARE_ACCOUNT_ID: '0123456789abcdef0123456789abcdef',
+          CLOUDFLARE_API_TOKEN: 'test-only-token-never-real',
+        },
+      );
+      const prompt = (fetchMock.mock.calls[0][1]?.body as FormData).get('prompt');
+
+      expect(response.status).toBe(200);
+      expect(prompt).toContain('brushed or polished stainless steel');
+      expect(prompt).toContain('aluminium composite panel');
+      expect(prompt).toContain('LED neon-flex tubing');
+      expect(prompt).toContain("in the customer's priority order");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('rejects unknown materials and non-array material payloads before contacting a provider', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      const image = new File([jpegFixture()], 'front.jpg', { type: 'image/jpeg' });
+      const environment = {
+        AI_PROVIDER: 'cloudflare-flux',
+        CLOUDFLARE_ACCOUNT_ID: '0123456789abcdef0123456789abcdef',
+        CLOUDFLARE_API_TOKEN: 'test-only-token-never-real',
+      };
+
+      const unknown = await handleAiGeneration(makeAiRequest(image, { materials: ['unobtainium'] }), environment);
+      expect(unknown.status).toBe(400);
+      expect((await unknown.json()).code).toBe('INVALID_CONFIGURATION');
+
+      const notAnArray = await handleAiGeneration(makeAiRequest(image, { materials: 'acrylic' }), environment);
+      expect(notAnArray.status).toBe(400);
+
+      const tooMany = await handleAiGeneration(
+        makeAiRequest(image, { materials: ['acrylic', 'aluminium', 'pvc', 'wood', 'vinyl', 'ledModules', 'neonFlex'] }),
+        environment,
+      );
+      expect(tooMany.status).toBe(400);
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('still serves an older client that does not send the materials field', async () => {
+    const image = new File([jpegFixture()], 'front.jpg', { type: 'image/jpeg' });
+    const form = new FormData();
+    form.append('storefrontImage', image, image.name);
+    const { materials: _materials, ...legacyConfiguration } = {
+      ...DEFAULT_SIGN_CONFIGURATION,
+      businessName: 'Atelier Sable',
+      exactText: 'ATELIER SABLE',
+    };
+    form.append('configuration', JSON.stringify(legacyConfiguration));
+    const request = new Request('https://signcraft.example/api/ai/generate-sign', { method: 'POST', body: form });
+
+    const response = await handleAiGeneration(request, { AI_PROVIDER: 'demo' });
+    expect(response.status).toBe(503);
+    expect((await response.json()).status).toBe('UNAVAILABLE');
+  });
+
   it('rejects a spoofed MIME type for an attached quote image', async () => {
     const form = new FormData();
     form.append('quote', JSON.stringify(validQuote));
@@ -150,6 +228,26 @@ describe('server API safety defaults', () => {
     const response = await handleQuoteSubmission(new Request('https://signcraft.example/api/quotes', { method: 'POST', body: form }));
     expect(response.status).toBe(415);
     expect((await response.json()).code).toBe('INVALID_IMAGE_CONTENT');
+  });
+
+  it('validates the material list on a quote request', async () => {
+    const accepted = new FormData();
+    accepted.append('quote', JSON.stringify({
+      ...validQuote,
+      signConfiguration: { ...validQuote.signConfiguration, materials: ['acrylic', 'unsure'] },
+    }));
+    const acceptedResponse = await handleQuoteSubmission(new Request('https://signcraft.example/api/quotes', { method: 'POST', body: accepted }));
+    expect(acceptedResponse.status).toBe(503);
+    expect((await acceptedResponse.json()).code).toBe('QUOTE_DELIVERY_NOT_CONFIGURED');
+
+    const rejected = new FormData();
+    rejected.append('quote', JSON.stringify({
+      ...validQuote,
+      signConfiguration: { ...validQuote.signConfiguration, materials: ['not-a-material'] },
+    }));
+    const rejectedResponse = await handleQuoteSubmission(new Request('https://signcraft.example/api/quotes', { method: 'POST', body: rejected }));
+    expect(rejectedResponse.status).toBe(400);
+    expect((await rejectedResponse.json()).code).toBe('INVALID_QUOTE');
   });
 
   it('does not claim a quote was delivered when no secure repository exists', async () => {

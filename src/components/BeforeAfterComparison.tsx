@@ -1,5 +1,6 @@
-import { useState } from 'react';
-import { ImageOff, MoveHorizontal } from 'lucide-react';
+import { ImageOff } from 'lucide-react';
+import { SafeImage } from './SafeImage';
+import { TransformationSlider } from './TransformationSlider';
 import { useLanguage } from '../context/LanguageContext';
 
 interface BeforeAfterComparisonProps {
@@ -8,7 +9,6 @@ interface BeforeAfterComparisonProps {
 }
 
 export function BeforeAfterComparison({ beforeImage, afterImage }: BeforeAfterComparisonProps) {
-  const [position, setPosition] = useState(50);
   const { t } = useLanguage();
 
   if (!afterImage) {
@@ -16,7 +16,7 @@ export function BeforeAfterComparison({ beforeImage, afterImage }: BeforeAfterCo
       <div className="comparison-grid">
         <figure className="comparison-card">
           <div className="comparison-image-wrap">
-            {beforeImage ? <img src={beforeImage} alt={t('result.reference')} /> : <div className="comparison-empty"><ImageOff size={24} /><span>{t('result.noPhoto')}</span></div>}
+            {beforeImage ? <SafeImage src={beforeImage} alt={t('result.reference')} /> : <div className="comparison-empty"><ImageOff size={24} /><span>{t('result.noPhoto')}</span></div>}
           </div>
           <figcaption><span className="comparison-dot is-before" />{t('result.before')}</figcaption>
         </figure>
@@ -33,22 +33,11 @@ export function BeforeAfterComparison({ beforeImage, afterImage }: BeforeAfterCo
   }
 
   return (
-    <div className="comparison-slider" style={{ '--compare-position': `${position}%` } as React.CSSProperties}>
-      <img className="comparison-base" src={afterImage} alt={t('result.after')} />
-      {beforeImage && <img className="comparison-overlay" src={beforeImage} alt={t('result.before')} />}
-      <div className="comparison-labels">
-        <span>{t('result.before')}</span><span>{t('result.after')}</span>
-      </div>
-      <div className="comparison-divider" aria-hidden="true"><span><MoveHorizontal size={18} /></span></div>
-      <input
-        className="comparison-range"
-        type="range"
-        min="0"
-        max="100"
-        value={position}
-        onChange={(event) => setPosition(Number(event.target.value))}
-        aria-label={`${t('result.before')} / ${t('result.after')}`}
-      />
-    </div>
+    <TransformationSlider
+      beforeImage={beforeImage}
+      afterImage={afterImage}
+      beforeLabel={t('result.before')}
+      afterLabel={t('result.after')}
+    />
   );
 }

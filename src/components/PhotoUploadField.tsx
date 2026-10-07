@@ -2,6 +2,7 @@ import { useRef, useState, type DragEvent, type ChangeEvent } from 'react';
 import { ImagePlus, ImageUp, LoaderCircle, RefreshCw, Trash2 } from 'lucide-react';
 import { useProject } from '../context/ProjectContext';
 import { useLanguage } from '../context/LanguageContext';
+import { SafeImage } from './SafeImage';
 import { validateStorefrontImage } from '../services/upload';
 import { clientConfig } from '../services/config';
 import { photoPrivacyMessageKey } from '../services/ai/presentation';
@@ -64,7 +65,7 @@ export function PhotoUploadField() {
       ) : (
         <div className="uploaded-photo-card">
           <div className="uploaded-photo-image">
-            <img src={photo.previewUrl} alt={`${t('studio.photoSelected')} — ${photo.fileName}`} />
+            <SafeImage src={photo.previewUrl} alt={`${t('studio.photoSelected')} — ${photo.fileName}`} />
             {busy && <div className="photo-busy"><LoaderCircle className="spin" size={24} /></div>}
           </div>
           <div className="uploaded-photo-details">

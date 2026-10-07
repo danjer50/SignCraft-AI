@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ArrowUpRight, Menu, X } from 'lucide-react';
-import { NavLink, useLocation } from 'react-router-dom';
+import { NavLink } from 'react-router-dom';
 import { useLanguage, type Locale } from '../context/LanguageContext';
 import { BrandLogo } from './BrandLogo';
 
@@ -22,10 +22,13 @@ interface SiteHeaderProps {
   onOpenQuote: () => void;
 }
 
+/**
+ * Customer header: the simplified journey only (studio + quote). Professional and admin
+ * workspaces are deliberately not exposed here; they live in the footer workspace section.
+ */
 export function SiteHeader({ onOpenQuote }: SiteHeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const { t } = useLanguage();
-  const location = useLocation();
   const closeMenu = () => setMenuOpen(false);
 
   return (
@@ -42,20 +45,19 @@ export function SiteHeader({ onOpenQuote }: SiteHeaderProps) {
           {menuOpen ? <X size={21} /> : <Menu size={21} />}
         </button>
         <div className={`site-navigation${menuOpen ? ' is-open' : ''}`}>
-          <nav className="primary-nav" aria-label="Main navigation">
+          <nav className="primary-nav" aria-label={t('nav.customer')}>
+            <NavLink to="/" end onClick={closeMenu} className={({ isActive }) => isActive ? 'active' : ''}>{t('nav.home')}</NavLink>
             <NavLink to="/studio" onClick={closeMenu} className={({ isActive }) => isActive ? 'active' : ''}>{t('nav.studio')}</NavLink>
-            <NavLink to="/professional" onClick={closeMenu} className={({ isActive }) => isActive ? 'active' : ''}>{t('nav.professional')}</NavLink>
-            <NavLink to="/admin" onClick={closeMenu} className={({ isActive }) => isActive ? 'active' : ''}>{t('nav.admin')}</NavLink>
           </nav>
           <div className="header-actions">
             <LanguageSwitcher />
+            <NavLink to="/studio" onClick={closeMenu} className="button button-primary header-cta">{t('home.heroCta')}</NavLink>
             <button className="button button-dark button-small header-quote" type="button" onClick={() => { closeMenu(); onOpenQuote(); }}>
               <span>{t('nav.contact')}</span><ArrowUpRight size={15} aria-hidden="true" />
             </button>
           </div>
         </div>
       </div>
-      {location.pathname === '/admin' && <span className="sr-only">Local demonstration administration page</span>}
     </header>
   );
 }

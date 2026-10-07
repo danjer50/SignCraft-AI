@@ -1,6 +1,7 @@
-import type { SignConfiguration } from '../../domain/sign';
+import type { SignConfiguration, SignMaterial } from '../../domain/sign';
+import { normalizeMaterials } from '../../domain/sign';
 
-export const SIGNCRAFT_PROMPT_VERSION = 'storefront-inpaint-v2';
+export const SIGNCRAFT_PROMPT_VERSION = 'storefront-inpaint-v3';
 
 const signDescriptions: Record<SignConfiguration['signType'], string> = {
   threeD: 'raised three-dimensional lettering',
@@ -27,6 +28,33 @@ const lightingDescriptions: Record<SignConfiguration['lighting'], string> = {
   none: 'no added illumination', frontLit: 'subtle front illumination', halo: 'a soft rear halo glow', neon: 'neon-style illumination',
 };
 
+const materialDescriptions: Record<SignMaterial, string> = {
+  acrylic: 'polished cast acrylic (plexiglass)',
+  aluminiumComposite: 'aluminium composite panel (Alucobond/Dibond)',
+  aluminium: 'folded sheet aluminium',
+  pvc: 'expanded PVC foam board',
+  polycarbonate: 'translucent polycarbonate',
+  stainlessSteel: 'brushed or polished stainless steel',
+  galvanizedSteel: 'painted galvanized steel',
+  wood: 'treated exterior wood',
+  vinyl: 'applied adhesive vinyl film',
+  ledModules: 'integrated LED modules with a diffusing face',
+  neonFlex: 'LED neon-flex tubing',
+  unsure: 'a professionally appropriate material chosen by the sign maker',
+};
+
+const NO_MATERIAL_BRIEF = 'No specific material was requested yet; use one professionally plausible material for this sign type without inventing branded products.';
+
+/** Materials in the customer's own priority order, phrased so several can be combined on one sign. */
+export function describeRequestedMaterials(materials: readonly SignMaterial[]): string {
+  const selected = normalizeMaterials(materials);
+  if (selected.length === 0) return NO_MATERIAL_BRIEF;
+  if (selected.includes('unsure') && selected.length === 1) return NO_MATERIAL_BRIEF;
+  const named = selected.filter((material) => material !== 'unsure').map((material) => materialDescriptions[material]);
+  const advice = selected.includes('unsure') ? ' The customer is also open to a professional recommendation for any remaining part.' : '';
+  return `Requested fabrication materials, in the customer's priority order: ${named.join('; ') || 'a professional recommendation'}. Show realistic surfaces, edges, returns and finishes for exactly these materials; when several are requested, combine them plausibly on one sign (for example letters in one material mounted on a fascia in another) instead of duplicating the sign.${advice}`;
+}
+
 /** Provider-neutral storefront edit brief; the customer's exact wording remains structured data. */
 export function buildStorefrontEditPrompt(configuration: SignConfiguration): string {
   const exactText = configuration.exactText.trim() ? configuration.exactText : configuration.businessName.trim() || '[exact sign text not supplied]';
@@ -36,6 +64,7 @@ export function buildStorefrontEditPrompt(configuration: SignConfiguration): str
     'Make the smallest possible localized inpainting-style change, primarily within the existing sign fascia or intended sign area. Add one professional sign physically attached to the facade; do not redesign or repaint the storefront.',
     'Preserve the original building and every surrounding element as closely as possible: facade, walls, doors, windows, street, roofline, pavement, neighboring buildings, landscaping and objects. Preserve the exact original camera viewpoint, perspective, crop, vanishing lines and scene lighting.',
     `Create one sign using ${signDescriptions[configuration.signType]} for a ${configuration.category} business, with a ${styleDescriptions[configuration.style]} visual direction.`,
+    describeRequestedMaterials(configuration.materials),
     `Requested business name: “${configuration.businessName.trim()}”. Exact sign wording and character order: “${exactText}”. Do not add slogans, extra words, logos, duplicate signs or invented lettering. The model's lettering is only an approximation; structured exact text and the separate SVG/HTML typography proof remain authoritative for spelling.`,
     `Requested primary sign colour (HEX): ${configuration.color}. Requested lighting: ${lightingDescriptions[configuration.lighting]}.`,
     `Approximate real-world sign dimensions: ${configuration.widthCm || 'not specified'} cm wide by ${configuration.heightCm || 'not specified'} cm high. Respect believable scale relative to the facade.`,

@@ -84,6 +84,9 @@ export function QuoteRequestDialog({ open, onClose }: QuoteRequestDialogProps) {
     }
   };
 
+  const materialsSummary = state.configuration.materials.length === 0
+    ? t('result.materialsNone')
+    : state.configuration.materials.map((material) => t(`material.${material}`)).join(' · ');
   const confirmed = result?.state === 'CONFIRMED';
   const localStorageFailed = result?.state === 'LOCAL_DRAFT' && result.reason === 'LOCAL_STORAGE_UNAVAILABLE';
   const localMessage = result?.state === 'LOCAL_DRAFT' && result.reason === 'DELIVERY_UNAVAILABLE'
@@ -100,6 +103,11 @@ export function QuoteRequestDialog({ open, onClose }: QuoteRequestDialogProps) {
             <h2 id="quote-dialog-title">{t('quote.dialogTitle')}</h2>
             <p className="quote-dialog-lead">{t('quote.dialogBody')}</p>
             <div className="quote-brief-chip"><span className="privacy-dot" /><span>{clientConfig.quoteMode === 'api' ? t('quote.formHintApi') : t('quote.formHint')}</span></div>
+            <div className="quote-brief-summary">
+              <span><i>{t('studio.signType')}</i><strong>{t(`sign.${state.configuration.signType}`)}</strong></span>
+              <span><i>{t('result.materials')}</i><strong>{materialsSummary}</strong></span>
+              <span><i>{t('studio.style')}</i><strong>{t(`style.${state.configuration.style}`)}</strong></span>
+            </div>
             <form className="quote-form" onSubmit={submit}>
               <label className="field-label">
                 {t('quote.name')} <span className="required-mark">*</span>

@@ -11,11 +11,22 @@ function writeJson(response: ServerResponse, status: number, message: string): v
   response.end(JSON.stringify({ status: 'UNAVAILABLE', message }));
 }
 
+export interface BridgeOptions {
+  /**
+   * Protocol and host used to rebuild the request URL. Vercel always terminates TLS, so `https`
+   * and the `host` header are correct there; a local dev middleware passes the forwarded values so
+   * same-origin checks compare what the browser actually sent.
+   */
+  protocol?: 'http' | 'https';
+  host?: string;
+}
+
 /** Adapt a Vercel Node.js function request to the shared Fetch Request handlers. */
 export async function bridgeVercelRequest(
   incoming: IncomingMessage,
   outgoing: ServerResponse,
   handler: WebRequestHandler,
+  options: BridgeOptions = {},
 ): Promise<void> {
   const declaredLength = Number(incoming.headers['content-length'] ?? 0);
   if (declaredLength > MAX_API_BODY_BYTES) {
@@ -41,8 +52,9 @@ export async function bridgeVercelRequest(
       if (value !== undefined) headers.set(name, Array.isArray(value) ? value.join(', ') : value);
     }
     const method = incoming.method ?? 'GET';
-    const host = incoming.headers.host ?? 'localhost';
-    const requestUrl = new URL(incoming.url ?? '/', `https://${host}`);
+    const host = options.host ?? incoming.headers.host ?? 'localhost';
+    const protocol = options.protocol ?? 'https';
+    const requestUrl = new URL(incoming.url ?? '/', `${protocol}://${host}`);
     const requestBody = method === 'GET' || method === 'HEAD'
       ? undefined
       : new Blob([Buffer.concat(chunks)]);

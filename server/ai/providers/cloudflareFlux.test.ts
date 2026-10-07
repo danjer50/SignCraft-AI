@@ -11,6 +11,7 @@ const configuration: SignConfiguration = {
   category: 'retail',
   signType: 'threeD',
   style: 'modern',
+  materials: ['acrylic', 'aluminiumComposite'],
   color: '#24463f',
   lighting: 'halo',
   exactText: 'ATELIER SABLE · حرف',

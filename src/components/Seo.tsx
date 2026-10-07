@@ -20,22 +20,28 @@ function setMeta(selector: string, attribute: string, value: string) {
 
 export function Seo({ title, description, noIndex = false }: SeoProps) {
   useEffect(() => {
-    const fullTitle = `${title} | SignCraft AI`;
-    document.title = fullTitle;
-    setMeta('meta[name="description"]', 'content', description);
-    setMeta('meta[property="og:title"]', 'content', fullTitle);
-    setMeta('meta[property="og:description"]', 'content', description);
-    setMeta('meta[name="robots"]', 'content', noIndex ? 'noindex,nofollow' : 'index,follow');
-    if (clientConfig.siteUrl) {
-      const canonicalUrl = `${clientConfig.siteUrl}${window.location.pathname}`;
-      let canonical = document.head.querySelector<HTMLLinkElement>('link[rel="canonical"]');
-      if (!canonical) {
-        canonical = document.createElement('link');
-        canonical.rel = 'canonical';
-        document.head.appendChild(canonical);
+    // A locked-down document (sandboxed frame, aggressive CSP, frozen head) must never take a
+    // customer page down: metadata is a progressive enhancement, the page content is not.
+    try {
+      const fullTitle = `${title} | SignCraft AI`;
+      document.title = fullTitle;
+      setMeta('meta[name="description"]', 'content', description);
+      setMeta('meta[property="og:title"]', 'content', fullTitle);
+      setMeta('meta[property="og:description"]', 'content', description);
+      setMeta('meta[name="robots"]', 'content', noIndex ? 'noindex,nofollow' : 'index,follow');
+      if (clientConfig.siteUrl) {
+        const canonicalUrl = `${clientConfig.siteUrl}${window.location.pathname}`;
+        let canonical = document.head.querySelector<HTMLLinkElement>('link[rel="canonical"]');
+        if (!canonical) {
+          canonical = document.createElement('link');
+          canonical.rel = 'canonical';
+          document.head.appendChild(canonical);
+        }
+        canonical.href = canonicalUrl;
+        setMeta('meta[property="og:url"]', 'content', canonicalUrl);
       }
-      canonical.href = canonicalUrl;
-      setMeta('meta[property="og:url"]', 'content', canonicalUrl);
+    } catch {
+      // Keep the rendered page; only the head metadata is skipped.
     }
   }, [title, description, noIndex]);
   return null;
