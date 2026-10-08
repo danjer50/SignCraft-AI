@@ -1,5 +1,6 @@
 import type { AIErrorCode } from '../../../src/domain/sign.js';
 import { DEFAULT_PROVIDER_TIMEOUT_MS, mapHttpStatusToErrorCode, postJson, readProviderMessage, sanitizeProviderErrorMessage } from '../http.js';
+import { sanitizeAIDiagnosticText } from '../diagnostics.js';
 import { bytesToBase64, decodeProviderDataUrlImage, isUnchangedSource } from '../imageResult.js';
 import type { AIEnvironment, AIProviderOptions, ServerAIImageProvider, ServerAIResult, ServerImageEditInput } from '../types.js';
 
@@ -65,7 +66,7 @@ export class OpenRouterImageProvider implements ServerAIImageProvider {
   async generate(input: ServerImageEditInput): Promise<ServerAIResult> {
     const failure = (
       errorCode: AIErrorCode,
-      details: { providerHttpStatus?: number; providerErrorMessage?: string } = {},
+      details: { providerHttpStatus?: number; providerErrorCode?: string; providerErrorMessage?: string } = {},
     ): ServerAIResult => ({
       status: 'ERROR',
       providerId: this.id,
@@ -102,8 +103,12 @@ export class OpenRouterImageProvider implements ServerAIImageProvider {
         ? body.error.message
         : readProviderMessage(result.body);
       const safeProviderMessage = sanitizeProviderErrorMessage(providerMessage, [this.apiKey]);
+      const providerErrorCode = sanitizeAIDiagnosticText(body?.error?.code, {
+        OPENROUTER_API_KEY: this.apiKey,
+      }, 100);
       return failure(mapHttpStatusToErrorCode(result.status, providerMessage), {
         ...(result.status >= 100 ? { providerHttpStatus: result.status } : {}),
+        ...(providerErrorCode ? { providerErrorCode } : {}),
         ...(safeProviderMessage ? { providerErrorMessage: safeProviderMessage } : {}),
       });
     }
@@ -112,8 +117,12 @@ export class OpenRouterImageProvider implements ServerAIImageProvider {
       // OpenRouter can report a routing/quota failure inside an HTTP 200 envelope.
       const providerMessage = typeof body.error.message === 'string' ? body.error.message : '';
       const safeProviderMessage = sanitizeProviderErrorMessage(providerMessage, [this.apiKey]);
+      const providerErrorCode = sanitizeAIDiagnosticText(body.error.code, {
+        OPENROUTER_API_KEY: this.apiKey,
+      }, 100);
       return failure(mapHttpStatusToErrorCode(result.status, providerMessage), {
         providerHttpStatus: result.status,
+        ...(providerErrorCode ? { providerErrorCode } : {}),
         ...(safeProviderMessage ? { providerErrorMessage: safeProviderMessage } : {}),
       });
     }

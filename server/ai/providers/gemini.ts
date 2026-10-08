@@ -1,5 +1,6 @@
 import type { AIErrorCode } from '../../../src/domain/sign.js';
 import { DEFAULT_PROVIDER_TIMEOUT_MS, mapHttpStatusToErrorCode, postJson, readProviderMessage, sanitizeProviderErrorMessage } from '../http.js';
+import { sanitizeAIDiagnosticText } from '../diagnostics.js';
 import { bytesToBase64, decodeProviderBase64Image, isUnchangedSource } from '../imageResult.js';
 import type { AIEnvironment, AIProviderOptions, ServerAIImageProvider, ServerAIResult, ServerImageEditInput } from '../types.js';
 
@@ -10,7 +11,7 @@ type GeminiPart = { text?: unknown; thought?: unknown; inlineData?: { mimeType?:
 type GeminiEnvelope = {
   candidates?: Array<{ content?: { parts?: GeminiPart[] }; finishReason?: unknown }>;
   promptFeedback?: { blockReason?: unknown };
-  error?: { message?: unknown };
+  error?: { message?: unknown; code?: unknown; status?: unknown };
 };
 
 function errorMessage(errorCode: AIErrorCode, model: string): string {
@@ -58,7 +59,7 @@ export class GeminiImageProvider implements ServerAIImageProvider {
   async generate(input: ServerImageEditInput): Promise<ServerAIResult> {
     const failure = (
       errorCode: AIErrorCode,
-      details: { providerHttpStatus?: number; providerErrorMessage?: string } = {},
+      details: { providerHttpStatus?: number; providerErrorCode?: string; providerErrorMessage?: string } = {},
     ): ServerAIResult => ({
       status: 'ERROR',
       providerId: this.id,
@@ -92,8 +93,12 @@ export class GeminiImageProvider implements ServerAIImageProvider {
         ? body.error.message
         : readProviderMessage(result.body);
       const safeProviderMessage = sanitizeProviderErrorMessage(providerMessage, [this.apiKey]);
+      const providerErrorCode = sanitizeAIDiagnosticText(body?.error?.status ?? body?.error?.code, {
+        GEMINI_API_KEY: this.apiKey,
+      }, 100);
       return failure(mapHttpStatusToErrorCode(result.status, providerMessage), {
         ...(result.status >= 100 ? { providerHttpStatus: result.status } : {}),
+        ...(providerErrorCode ? { providerErrorCode } : {}),
         ...(safeProviderMessage ? { providerErrorMessage: safeProviderMessage } : {}),
       });
     }
@@ -103,8 +108,12 @@ export class GeminiImageProvider implements ServerAIImageProvider {
         ? `Gemini blocked the request: ${body.promptFeedback.blockReason}`
         : 'Gemini blocked the request.';
       const safeProviderMessage = sanitizeProviderErrorMessage(reason, [this.apiKey]);
+      const providerErrorCode = sanitizeAIDiagnosticText(body.promptFeedback.blockReason, {
+        GEMINI_API_KEY: this.apiKey,
+      }, 100);
       return failure('AI_REQUEST_REJECTED', {
         providerHttpStatus: result.status,
+        ...(providerErrorCode ? { providerErrorCode } : {}),
         ...(safeProviderMessage ? { providerErrorMessage: safeProviderMessage } : {}),
       });
     }

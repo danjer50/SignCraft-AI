@@ -1,5 +1,6 @@
 import type { AIErrorCode } from '../../../src/domain/sign.js';
 import { DEFAULT_PROVIDER_TIMEOUT_MS, mapHttpStatusToErrorCode, postMultipart, readProviderMessage, sanitizeProviderErrorMessage } from '../http.js';
+import { sanitizeAIDiagnosticText } from '../diagnostics.js';
 import { decodeProviderBase64Image, isUnchangedSource } from '../imageResult.js';
 import type { AIEnvironment, AIProviderOptions, ServerAIImageProvider, ServerAIResult, ServerImageEditInput } from '../types.js';
 
@@ -71,7 +72,7 @@ export class PollinationsImageProvider implements ServerAIImageProvider {
   async generate(input: ServerImageEditInput): Promise<ServerAIResult> {
     const failure = (
       errorCode: AIErrorCode,
-      details: { providerHttpStatus?: number; providerErrorMessage?: string } = {},
+      details: { providerHttpStatus?: number; providerErrorCode?: string; providerErrorMessage?: string } = {},
     ): ServerAIResult => ({
       status: 'ERROR',
       providerId: this.id,
@@ -102,8 +103,12 @@ export class PollinationsImageProvider implements ServerAIImageProvider {
         ? body.error.message
         : readProviderMessage(result.body);
       const safeProviderMessage = sanitizeProviderErrorMessage(providerMessage, [this.apiKey]);
+      const providerErrorCode = sanitizeAIDiagnosticText(body?.error?.code, {
+        POLLINATIONS_API_KEY: this.apiKey,
+      }, 100);
       return failure(mapHttpStatusToErrorCode(result.status, providerMessage), {
         ...(result.status >= 100 ? { providerHttpStatus: result.status } : {}),
+        ...(providerErrorCode ? { providerErrorCode } : {}),
         ...(safeProviderMessage ? { providerErrorMessage: safeProviderMessage } : {}),
       });
     }
