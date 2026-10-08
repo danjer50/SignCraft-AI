@@ -112,7 +112,7 @@ export function HomePage() {
             <p>{t('home.demoBody')}</p>
             <Link className="demo-link" to="/studio">{t('home.demoLink')} <ArrowUpRight size={15} /></Link>
           </div>
-          <div className="demo-panel-side"><span>AI STATUS</span><strong><span className="status-offline-dot" /> DEMO MODE</strong><div className="demo-status-rule" /><span>IMAGE EDITING</span><strong>NOT CONFIGURED</strong></div>
+          <div className="demo-panel-side"><span>AI STATUS</span><strong><span className="status-offline-dot" /> SERVER API</strong><div className="demo-status-rule" /><span>IMAGE EDITING</span><strong>CONFIGURATION REQUIRED</strong></div>
         </div>
       </section>
 

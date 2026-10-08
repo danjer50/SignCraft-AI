@@ -2,7 +2,11 @@
   "compilerOptions": {
     "composite": true,
     "target": "ES2022",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
     "module": "ESNext",
     "skipLibCheck": true,
     "moduleResolution": "Bundler",
@@ -13,7 +17,9 @@
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "types": ["node"]
+    "types": [
+      "node"
+    ]
   },
   "include": [
     "server/**/*.ts",
@@ -25,6 +31,11 @@
     "src/services/ai/contracts.ts",
     "src/services/ai/promptBuilder.ts",
     "src/services/ai/designSpecification.ts",
-    "src/services/ai/maskGenerator.ts"
+    "src/services/ai/maskGenerator.ts",
+    "src/services/ai/imagePreparation.ts",
+    "src/services/ai/imageProbe.ts",
+    "src/domain/provenance.ts",
+    "src/design/model.ts",
+    "src/design/fonts/catalogue.ts"
   ]
 }

@@ -209,7 +209,7 @@ describe('the public customer experience needs no account', () => {
     signedInAs('CUSTOMER');
     goTo('/studio?step=5');
 
-    expect(await screen.findByText(/Quelles matières pour votre enseigne/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Ajoutez une photo de votre devanture/i)).toBeInTheDocument();
     expect(window.location.pathname + window.location.search).toBe('/studio?step=5');
   });
 

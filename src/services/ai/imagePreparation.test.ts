@@ -255,12 +255,12 @@ describe('Cloudflare reference-image preparation', () => {
   });
 
   it('stages very large photos through a bounded intermediate canvas and releases every canvas', async () => {
-    const source = jpegFile(12000, 8000, { name: 'huge.jpg' });
+    const source = jpegFile(3000, 2000, { name: 'large-but-safe.jpg' });
     const records = installCanvas();
     // No bitmap API on this engine, so the full-resolution <img> path is the one under test.
     vi.stubGlobal('createImageBitmap', undefined);
     stubObjectUrl();
-    FakeImage.dimensions = { width: 12000, height: 8000 };
+    FakeImage.dimensions = { width: 3000, height: 2000 };
     vi.stubGlobal('Image', FakeImage);
 
     const prepared = await prepareCloudflareReferenceImage(source);

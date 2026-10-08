@@ -1,5 +1,21 @@
 {
   "rewrites": [
-    { "source": "/(.*)", "destination": "/index.html" }
-  ]
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ],
+  "git": {
+    "deploymentEnabled": {
+      "arena/e78a0033-signcraft-ai": false
+    }
+  },
+  "functions": {
+    "api/ai/*.ts": {
+      "includeFiles": "node_modules/@jsquash/**/codec/**/*.wasm"
+    },
+    "api/studio.ts": {
+      "includeFiles": "node_modules/@jsquash/**/codec/**/*.wasm"
+    }
+  }
 }

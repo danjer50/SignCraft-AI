@@ -7,6 +7,11 @@ import type { AuthEnvironment } from '../auth/types.js';
  */
 export function readAuthEnvironment(source: NodeJS.ProcessEnv = process.env): AuthEnvironment {
   return {
+    DATABASE_URL: source.DATABASE_URL,
+    DATABASE_SSL: source.DATABASE_SSL,
+    SIGNCRAFT_DB_FILE: source.SIGNCRAFT_DB_FILE,
+    REQUIRE_DURABLE_SESSIONS: source.REQUIRE_DURABLE_SESSIONS,
+    AI_ABUSE_SECRET: source.AI_ABUSE_SECRET,
     AUTH_SESSION_SECRET: source.AUTH_SESSION_SECRET,
     AUTH_SESSION_TTL_MINUTES: source.AUTH_SESSION_TTL_MINUTES,
     AUTH_COOKIE_NAME: source.AUTH_COOKIE_NAME,

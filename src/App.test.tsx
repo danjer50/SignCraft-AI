@@ -9,7 +9,7 @@ import App from './App';
 const routes = [
   { path: '/', expected: /métamorphosée/ },
   { path: '/studio', expected: /Ajoutez une photo de votre devanture/ },
-  { path: '/studio?step=5', expected: /Quelles matières pour votre enseigne/ },
+  { path: '/studio?step=5', expected: /Ajoutez une photo de votre devanture/ },
   { path: '/result', expected: /Aucun concept à afficher pour le moment/ },
   { path: '/professional', expected: /Du concept à l’atelier/ },
   // One shared login page; the private areas send an anonymous visitor there instead of failing.

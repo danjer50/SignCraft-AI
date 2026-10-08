@@ -87,9 +87,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signOut = useCallback(async () => {
-    // The local session is dropped even when the network call fails: a visible "signed out" state
-    // that contradicts the cookie is worse than a cookie that expires on its own.
-    await requestSignOut();
+    // Do not pretend the HttpOnly cookie disappeared if the server did not confirm logout.
+    const confirmed = await requestSignOut();
+    if (!confirmed) {
+      setState((current) => ({ ...current, failure: { code: 'SIGN_OUT_UNCONFIRMED', message: 'Sign-out was not confirmed. Please retry before leaving this device.' } }));
+      return;
+    }
     setState({ loading: false, status: 'anonymous', session: null, failure: null });
   }, []);
 

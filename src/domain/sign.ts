@@ -304,6 +304,8 @@ export function normalizeConceptResult(value: unknown): AIConceptResult | null {
     if (typeof source.imageUrl !== 'string' || !source.imageUrl.startsWith('data:image/')) return null;
     return {
       status: 'GENERATED',
+      ...(source.provenance && typeof source.provenance === 'object' ? { provenance: source.provenance as ConceptProvenance } : {}),
+      ...(typeof source.diagnosticId === 'string' ? { diagnosticId: source.diagnosticId.slice(0, 80) } : {}),
       providerId,
       imageUrl: source.imageUrl,
       createdAt,
@@ -345,6 +347,7 @@ export interface ImageReference {
 }
 
 export interface UploadedStorefrontPhoto extends ImageReference {
+  sourceIdentity?: string;
   file: File | null;
   previewUrl: string;
 }
@@ -415,7 +418,14 @@ export interface AIProviderFailureDiagnostic {
   providerErrorMessage?: string;
 }
 
-export type AIConceptResult =
+export interface ConceptProvenance {
+  schemaVersion: 1;
+  fingerprint: string;
+  sourceIdentity: string;
+  configuration: SignConfiguration;
+}
+
+export type AIConceptResult = (
   | {
       status: 'GENERATED';
       providerId: string;
@@ -434,7 +444,7 @@ export type AIConceptResult =
       providerHttpStatus?: number;
       providerErrorMessage?: string;
       providerFailures?: AIProviderFailureDiagnostic[];
-    };
+    }) & { diagnosticId?: string; provenance?: ConceptProvenance };
 
 export const DEFAULT_SIGN_CONFIGURATION: SignConfiguration = {
   businessName: '',

@@ -1,7 +1,11 @@
 import { homePathForRole, normalizeAuthAccount } from '../../src/domain/auth.js';
 import { equalizeTiming, verifyPassword } from '../auth/passwords.js';
 import { authenticate, authFailure, isSameOriginRequest, jsonResponse } from '../auth/guard.js';
-import { issueSession, signedOutCookie } from '../auth/sessions.js';
+import { issueSession, signedOutCookie, revokeSession } from '../auth/sessions.js';
+import { findStoredAccount, durableSessionsRequired } from '../auth/accountState.js';
+import { getDatabase } from '../storage/database.js';
+import { reserveCounter } from '../storage/repository.js';
+import { fingerprint } from '../../src/domain/provenance.js';
 import { createUserRepository } from '../auth/users.js';
 import type { AuthEnvironment } from '../auth/types.js';
 
@@ -119,7 +123,8 @@ export async function handleLogin(request: Request, environment: AuthEnvironment
   }
 
   const repository = createUserRepository(environment);
-  if (!repository.configured) {
+  const database = await getDatabase(environment);
+  if ((!repository.configured && !database) || (!database && durableSessionsRequired(environment))) {
     return authFailure(503, 'AUTH_NOT_CONFIGURED', 'Authentication is not configured on this deployment yet.');
   }
 
@@ -128,7 +133,8 @@ export async function handleLogin(request: Request, environment: AuthEnvironment
     return authFailure(429, 'TOO_MANY_ATTEMPTS', 'Too many attempts. Wait a few minutes, then sign in again.');
   }
 
-  const account = repository.findAccount(identifier);
+  if (database && !await reserveCounter(database, `login:${fingerprint({ key, secret: environment.AUTH_SESSION_SECRET })}`, 10, THROTTLE_WINDOW_MS)) return authFailure(429, 'TOO_MANY_ATTEMPTS', 'Too many attempts. Wait before trying again.');
+  const account = await findStoredAccount(environment, identifier);
   if (!account) {
     // Same cost and same answer as a wrong password: no account enumeration.
     await equalizeTiming();
@@ -208,6 +214,7 @@ export async function handleLogout(request: Request, environment: AuthEnvironmen
   if (!isSameOriginRequest(request)) {
     return authFailure(403, 'FORBIDDEN', 'Cross-site sign-out is blocked.');
   }
+  await revokeSession(request, environment);
   clearFailures(throttleKey(request, ''));
   return jsonResponse(200, { status: 'SIGNED_OUT' }, { 'set-cookie': signedOutCookie(environment, request) });
 }

@@ -54,9 +54,9 @@ function seedDraft(overrides: Record<string, unknown> = {}) {
   localStorage.setItem(STUDIO_DRAFT_KEY, JSON.stringify({
     id: 'visual-ux',
     step: 1,
-    photo: null,
+    photo: { fileName: 'fixture.jpg', mimeType: 'image/jpeg', sizeBytes: 100, previewDataUrl: 'data:image/jpeg;base64,dGh1bWI=' },
     lastConcept: null,
-    configuration: { ...DEFAULT_SIGN_CONFIGURATION },
+    configuration: { ...DEFAULT_SIGN_CONFIGURATION, businessName: 'Atelier' },
     ...overrides,
   }));
 }

@@ -25,7 +25,7 @@ export function SafeImage({ src, alt, className, compact = false }: SafeImagePro
 
   if (failed) {
     return (
-      <div className={`image-fallback${compact ? ' image-fallback-compact' : ''}`}>
+      <div className={`image-fallback ${className ?? ''}${compact ? ' image-fallback-compact' : ''}`}>
         <span className="image-fallback-mark"><ImageOff size={compact ? 16 : 22} /></span>
         <strong>{t('image.unavailable')}</strong>
         {!compact && <span>{t('image.unavailableBody')}</span>}

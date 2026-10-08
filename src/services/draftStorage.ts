@@ -11,6 +11,7 @@ export interface PersistedDraftPhoto {
   mimeType: string;
   sizeBytes: number;
   transferState: 'LOCAL_ONLY';
+  sourceIdentity?: string;
   previewDataUrl?: string;
 }
 

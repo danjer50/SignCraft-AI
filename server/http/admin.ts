@@ -1,5 +1,5 @@
 import { ACCOUNT_ROLES, homePathForRole } from '../../src/domain/auth.js';
-import { authFailure, jsonResponse, requireRole } from '../auth/guard.js';
+import { authFailure, isSameOriginRequest, jsonResponse, requireRole } from '../auth/guard.js';
 import { cookieName, sessionTtlMinutes } from '../auth/sessions.js';
 import { createUserRepository, diagnoseUserStore } from '../auth/users.js';
 import { MINIMUM_ITERATIONS } from '../auth/passwords.js';
@@ -96,8 +96,8 @@ export async function handleAdminOverview(request: Request, environment: AuthEnv
     },
     {
       id: 'quoteRequests',
-      state: quoteProvider === 'demo' ? 'local-only' : 'ready',
-      metrics: { storageProvider: quoteProvider, serverQueueConnected: quoteProvider !== 'demo' },
+      state: 'local-only',
+      metrics: { storageProvider: quoteProvider, serverQueueConnected: false },
       issues: quoteProvider === 'demo'
         ? ['Quote requests are stored in the browser that received them (QUOTE_STORAGE_PROVIDER=demo).']
         : [],
@@ -202,6 +202,7 @@ export async function handleAdminProAccounts(request: Request, environment: Auth
     return authFailure(405, 'METHOD_NOT_ALLOWED', 'Use GET, POST, PATCH or DELETE on this endpoint.');
   }
 
+  if (!isSameOriginRequest(request)) return authFailure(403, 'FORBIDDEN', 'A same-origin request is required.');
   const result = request.method === 'POST'
     ? await repository.createProAccount({ username: '', email: '', password: '' })
     : request.method === 'PATCH'

@@ -238,7 +238,8 @@ p { color: var(--muted); }
 .comparison-slider--hero { aspect-ratio: 16 / 9.4; border-radius: 18px; box-shadow: 0 40px 90px rgba(0, 0, 0, .6), 0 0 0 1px rgba(255, 255, 255, .06); }
 .comparison-slider--result { aspect-ratio: 16 / 9; }
 .comparison-base, .comparison-overlay { position: absolute; inset: 0; width: 100%; height: 100%; }
-.comparison-base img, .comparison-overlay img { width: 100%; height: 100%; object-fit: cover; }
+.comparison-base, .comparison-overlay { object-fit: contain; }
+.comparison-slider { direction: ltr; }
 .comparison-overlay { clip-path: inset(0 calc(100% - var(--compare-position)) 0 0); }
 .comparison-labels { position: absolute; inset: 14px 14px auto; display: flex; justify-content: space-between; pointer-events: none; z-index: 3; }
 .comparison-labels span { border: 1px solid rgba(255, 255, 255, .22); border-radius: 20px; background: rgba(8, 10, 12, .6); backdrop-filter: blur(8px); padding: 5px 12px; color: var(--ink); font-size: 9px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; }
@@ -926,3 +927,6 @@ p { color: var(--muted); }
   .login-alternatives .button { width: 100%; }
   .pro-account-bar { align-items: stretch; }
 }
+
+.save-warning { padding: 12px 24px; border: 1px solid #b88755; background: #30261a; color: #ffe1ba; font-size: 13px; }
+.comparison-slider .image-fallback { z-index: 6; }

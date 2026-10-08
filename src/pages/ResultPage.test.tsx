@@ -6,6 +6,7 @@ import { ProjectProvider } from '../context/ProjectContext';
 import { QuoteDialogContext } from '../components/QuoteDialogContext';
 import { DEFAULT_SIGN_CONFIGURATION } from '../domain/sign';
 import { STUDIO_DRAFT_KEY } from '../services/draftStorage';
+import { makeProvenance } from '../domain/provenance';
 import { ResultPage } from './ResultPage';
 import { messages } from '../i18n/messages';
 
@@ -39,7 +40,7 @@ function seedDraft(concept: unknown, overrides: Record<string, unknown> = {}) {
       materials: ['acrylic', 'ledModules'],
       ...overrides.configuration as object,
     },
-    lastConcept: concept,
+    lastConcept: typeof concept === 'object' && concept !== null && (concept as { status?: string }).status === 'GENERATED' ? { ...concept, provenance: makeProvenance({ ...DEFAULT_SIGN_CONFIGURATION, businessName: 'Atelier Sable', exactText: 'ATELIER SABLE', signType: 'channelLetters', materials: ['acrylic', 'ledModules'], ...overrides.configuration as object }, 'facade.webp:4096:image/webp') } : concept,
     step: 5,
     photo: {
       fileName: 'facade.webp',

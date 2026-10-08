@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from 'react';
 import type {
   AIConceptResult,
   SignArea,
@@ -9,7 +9,7 @@ import type {
 } from '../domain/sign';
 import { DEFAULT_SIGN_CONFIGURATION, MAX_SIGN_MATERIALS, normalizeConceptResult, normalizeSignConfiguration } from '../domain/sign';
 import { clampStep } from '../domain/customerFlow';
-import { createStorefrontPhoto } from '../services/upload';
+import { createStorefrontPhoto, UploadError } from '../services/upload';
 import { readStudioDraft, writeStudioDraft, type StudioDraft } from '../services/draftStorage';
 
 interface ProjectState {
@@ -36,6 +36,7 @@ type ProjectAction =
 
 interface ProjectContextValue {
   state: ProjectState;
+  saveState: 'saved' | 'failed';
   updateConfiguration: (key: StringConfigurationKey, value: string) => void;
   setMaterials: (materials: SignMaterial[]) => void;
   toggleMaterial: (material: SignMaterial) => void;
@@ -94,6 +95,7 @@ function readDraft(): ProjectState {
           transferState: 'LOCAL_ONLY' as const,
           previewDataUrl: saved.photo.previewDataUrl,
           previewUrl: saved.photo.previewDataUrl,
+          sourceIdentity: saved.photo.sourceIdentity,
         }
       : null;
 
@@ -161,6 +163,9 @@ function reducer(state: ProjectState, action: ProjectAction): ProjectState {
 export function ProjectProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reducer, undefined, readDraft);
   const activeObjectUrl = useRef<string | null>(null);
+  const uploadOperation = useRef(0);
+  const uploadController = useRef<AbortController | null>(null);
+  const [saveState, setSaveState] = useState<'saved' | 'failed'>('saved');
 
   useEffect(() => {
     const photo = state.photo;
@@ -175,10 +180,11 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
         sizeBytes: photo.sizeBytes,
         transferState: 'LOCAL_ONLY',
         previewDataUrl: photo.previewDataUrl,
+        sourceIdentity: photo.sourceIdentity,
       } : null,
     };
     // Persistence is a convenience: a refused write never interrupts the active form.
-    writeStudioDraft(draft);
+    setSaveState(writeStudioDraft(draft) ? 'saved' : 'failed');
   }, [state]);
 
   const releaseOldPreview = useCallback((nextUrl: string | null) => {
@@ -194,6 +200,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => () => {
+    uploadOperation.current++; uploadController.current?.abort();
     if (activeObjectUrl.current) {
       try {
         URL.revokeObjectURL(activeObjectUrl.current);
@@ -220,12 +227,17 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const setPhotoFile = useCallback(async (file: File) => {
-    const photo = await createStorefrontPhoto(file);
+    const operation = ++uploadOperation.current;
+    uploadController.current?.abort();
+    const controller = new AbortController(); uploadController.current = controller;
+    const photo = await createStorefrontPhoto(file, { signal: controller.signal });
+    if (controller.signal.aborted || operation !== uploadOperation.current) throw new UploadError('cancelled');
     releaseOldPreview(photo.previewUrl);
     dispatch({ type: 'SET_PHOTO', photo });
   }, [releaseOldPreview]);
 
   const removePhoto = useCallback(() => {
+    uploadOperation.current++; uploadController.current?.abort();
     releaseOldPreview(null);
     dispatch({ type: 'SET_PHOTO', photo: null });
   }, [releaseOldPreview]);
@@ -243,12 +255,13 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const resetProject = useCallback(() => {
+    uploadOperation.current++; uploadController.current?.abort();
     releaseOldPreview(null);
     dispatch({ type: 'RESET' });
   }, [releaseOldPreview]);
 
   const value = useMemo<ProjectContextValue>(() => ({
-    state,
+    state, saveState,
     updateConfiguration,
     setMaterials,
     toggleMaterial,
@@ -261,7 +274,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     setConcept,
     resetProject,
   }), [
-    state,
+    state, saveState,
     updateConfiguration,
     setMaterials,
     toggleMaterial,

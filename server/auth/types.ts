@@ -1,3 +1,5 @@
+import type { StorageEnvironment } from '../storage/database.js';
+import type { DecoderModules } from '../ai/rasterDecode.js';
 import type { AuthAccount, AccountRole, AccountStatus } from '../../src/domain/auth.js';
 
 /**
@@ -5,7 +7,10 @@ import type { AuthAccount, AccountRole, AccountStatus } from '../../src/domain/a
  * environment variables / Cloudflare Pages secrets), never from the bundle: the browser only ever
  * receives the public account shape plus a signed session cookie.
  */
-export interface AuthEnvironment {
+export interface AuthEnvironment extends StorageEnvironment {
+  REQUIRE_DURABLE_SESSIONS?: string;
+  AI_ABUSE_SECRET?: string;
+  IMAGE_DECODER_MODULES?: DecoderModules;
   /** Secret used to sign session cookies (HMAC-SHA256). Without it no session can be issued. */
   AUTH_SESSION_SECRET?: string;
   /** Session lifetime in minutes; defaults to 12 hours. */
@@ -85,6 +90,7 @@ export interface UserRepository {
 export interface SessionClaims {
   /** Subject: the account id. */
   sub: string;
+  accountVersion?: string;
   /** Random per-session id, so a future revocation list has something to point at. */
   sid: string;
   role: AccountRole;

@@ -222,7 +222,7 @@ describe('simplified customer flow', () => {
     // A restored preview is never treated as a generatable photo: the flow stops early.
     fireEvent.click(continueButton());
     expect(screen.getByRole('alert')).toHaveTextContent(/aperçu local/i);
-    expect(screen.getByRole('button', { name: /Matières/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Matières/ })).toBeEnabled(); // Preview permits brief editing, not image generation.
     expect(screen.queryByRole('heading', { level: 1, name: 'Votre projet prend forme.' })).not.toBeInTheDocument();
   });
 });
@@ -231,6 +231,7 @@ describe('bilingual-style text reminder', () => {
   it('warns when the bilingual style is chosen but the exact text is only one script', async () => {
     seedDraft({
       step: 4,
+      photo: { fileName: 'fixture.jpg', mimeType: 'image/jpeg', sizeBytes: 100, previewDataUrl: 'data:image/jpeg;base64,dGh1bWI=' },
       configuration: { ...DEFAULT_SIGN_CONFIGURATION, businessName: 'Atelier Sable', exactText: 'Café', style: 'arabicFrench' },
     });
     renderStudioFlow();
@@ -247,6 +248,7 @@ describe('bilingual-style text reminder', () => {
   it('does not warn once the exact text already combines both scripts', async () => {
     seedDraft({
       step: 4,
+      photo: { fileName: 'fixture.jpg', mimeType: 'image/jpeg', sizeBytes: 100, previewDataUrl: 'data:image/jpeg;base64,dGh1bWI=' },
       configuration: { ...DEFAULT_SIGN_CONFIGURATION, businessName: 'Atelier Sable', exactText: 'مقهى · Café', style: 'arabicFrench' },
     });
     renderStudioFlow();
@@ -258,6 +260,7 @@ describe('bilingual-style text reminder', () => {
   it('shows no reminder at all for styles unrelated to Arabic or bilingual text', async () => {
     seedDraft({
       step: 4,
+      photo: { fileName: 'fixture.jpg', mimeType: 'image/jpeg', sizeBytes: 100, previewDataUrl: 'data:image/jpeg;base64,dGh1bWI=' },
       configuration: { ...DEFAULT_SIGN_CONFIGURATION, businessName: 'Atelier Sable', style: 'modern' },
     });
     renderStudioFlow();

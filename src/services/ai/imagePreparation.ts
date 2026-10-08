@@ -1,5 +1,5 @@
-import { MAX_AI_IMAGE_SIDE } from './contracts';
-import { orientedImageSize, readImageHeader, type ImageHeader } from './imageProbe';
+import { MAX_AI_IMAGE_SIDE } from './contracts.js';
+import { orientedImageSize, readImageHeader, type ImageHeader } from './imageProbe.js';
 
 interface Dimensions {
   width: number;
@@ -48,6 +48,10 @@ const DEFAULT_ENCODE_TIMEOUT_MS = 5_000;
 type OutputType = 'image/jpeg' | 'image/png' | 'image/webp';
 
 export interface PreparationOptions {
+  /** Cancellation and bounded local-preview reuse; the AI default remains 511 px. */
+  signal?: AbortSignal;
+  maxSide?: number;
+  maxInputPixels?: number;
   /** Watchdog for a single decode strategy. Defaults to 12 s; tests use much smaller values. */
   strategyTimeoutMs?: number;
   /** Watchdog for the whole preparation. Defaults to 25 s. */
@@ -80,7 +84,8 @@ function longestSide(size: Dimensions): number {
 function resizeOption(header: ImageHeader | null, maxSide = FINAL_MAX_SIDE): { resizeWidth: number } | { resizeHeight: number } {
   if (header) {
     const oriented = orientedImageSize(header);
-    if (oriented.height > oriented.width) return { resizeHeight: maxSide };
+    if (oriented.height > oriented.width) return { resizeHeight: Math.min(maxSide, oriented.height) };
+    return { resizeWidth: Math.min(maxSide, oriented.width) };
   }
   return { resizeWidth: maxSide };
 }
@@ -240,7 +245,7 @@ async function downscaleToReference(
   budget: PreparationBudget,
 ): Promise<File> {
   budget.assertAvailable('Encoding the photo timed out.');
-  const target = scaledSize(sourceSize);
+  const target = scaledSize(sourceSize, Math.min(1600, options.maxSide ?? FINAL_MAX_SIDE));
   if (longestSide(sourceSize) <= SINGLE_DRAW_MAX_SIDE) {
     const canvas = draw(source, target);
     try {
@@ -286,11 +291,12 @@ function createBudget(options: PreparationOptions): PreparationBudget {
     ? Math.max(0, options.totalTimeoutMs as number)
     : DEFAULT_TOTAL_TIMEOUT_MS;
   const deadline = Date.now() + configuredTotal;
-  const remaining = () => Math.max(0, deadline - Date.now());
+  const remaining = () => options.signal?.aborted ? 0 : Math.max(0, deadline - Date.now());
 
   return {
     remaining,
     assertAvailable(message) {
+      if (options.signal?.aborted) throw new DOMException('Preparation cancelled.', 'AbortError');
       if (remaining() <= 0) throw new Error(message);
     },
     run<T>(
@@ -300,6 +306,7 @@ function createBudget(options: PreparationOptions): PreparationBudget {
       onTimeout?: () => void,
       onLateValue?: (value: T) => void,
     ): Promise<T> {
+      if (options.signal?.aborted) return Promise.reject(new DOMException('Preparation cancelled.', 'AbortError'));
       const available = remaining();
       const configuredDuration = Number.isFinite(maxDurationMs) ? Math.max(0, maxDurationMs) : 0;
       const timeoutMs = Math.min(available, configuredDuration);
@@ -308,7 +315,7 @@ function createBudget(options: PreparationOptions): PreparationBudget {
         return Promise.reject(new Error(message));
       }
       const pending = Promise.resolve().then(work);
-      return withTimeout(pending, timeoutMs, message, () => remaining() <= 0, onTimeout, onLateValue);
+      return withTimeout(pending, timeoutMs, message, () => remaining() <= 0, onTimeout, onLateValue, options.signal);
     },
   };
 }
@@ -332,6 +339,7 @@ function withTimeout<T>(
   totalExpired?: () => boolean,
   onTimeout?: () => void,
   onLateValue?: (value: T) => void,
+  signal?: AbortSignal,
 ): Promise<T> {
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
     onTimeout?.();
@@ -341,14 +349,22 @@ function withTimeout<T>(
   const stageDeadline = Date.now() + timeoutMs;
   return new Promise<T>((resolve, reject) => {
     let settled = false;
+    const cleanup = () => { clearTimeout(timer); signal?.removeEventListener('abort', abort); };
+    const abort = () => {
+      if (settled) return;
+      settled = true; cleanup(); onTimeout?.();
+      reject(new DOMException('Preparation cancelled.', 'AbortError'));
+    };
     const rejectForTimeout = () => {
       if (settled) return;
       settled = true;
-      clearTimeout(timer);
+      cleanup();
       onTimeout?.();
       reject(new Error(message));
     };
     const timer = setTimeout(rejectForTimeout, timeoutMs);
+    signal?.addEventListener('abort', abort, { once: true });
+    if (signal?.aborted) abort();
 
     work.then(
       (value) => {
@@ -370,7 +386,7 @@ function withTimeout<T>(
           return;
         }
         settled = true;
-        clearTimeout(timer);
+        cleanup();
         resolve(value);
       },
       (error) => {
@@ -380,7 +396,7 @@ function withTimeout<T>(
           return;
         }
         settled = true;
-        clearTimeout(timer);
+        cleanup();
         reject(error);
       },
     );
@@ -425,11 +441,11 @@ function decodeBitmapWithTimeout(
  */
 async function prepareViaImageBitmap(source: File, header: ImageHeader | null, options: PreparationOptions, budget: PreparationBudget): Promise<File> {
   if (typeof createImageBitmap !== 'function') throw new Error('createImageBitmap is not supported in this browser.');
-  const resize = resizeOption(header);
+  const resize = resizeOption(header, Math.min(1600, options.maxSide ?? FINAL_MAX_SIDE));
   const attempts: ImageBitmapOptions[] = [
     { imageOrientation: 'from-image', ...resize, resizeQuality: 'high' },
     { ...resize, resizeQuality: 'high' },
-    {},
+    ...(header && header.width * header.height > 8_000_000 ? [] : [{}]),
   ];
 
   let bitmap: ImageBitmap | null = null;
@@ -542,6 +558,10 @@ export async function prepareCloudflareReferenceImage(source: File, options: Pre
     budget.remaining(),
     'Preparing the photo timed out.',
   );
+  if (header && (header.width * header.height > (options.maxInputPixels ?? 24_000_000) || header.width > 30_000 || header.height > 30_000)) {
+    throw new Error('Image pixel budget exceeded.');
+  }
+  const allowFullDecode = !header || header.width * header.height <= 8_000_000;
   const attempts: Array<{ name: string; run: () => Promise<File> }> = [];
   const failures: unknown[] = [];
 
@@ -557,7 +577,7 @@ export async function prepareCloudflareReferenceImage(source: File, options: Pre
     }
 
     attempts.push({ name: 'image-bitmap', run: () => prepareViaImageBitmap(source, header, options, budget) });
-    if (objectUrl) {
+    if (objectUrl && allowFullDecode) {
       attempts.push({ name: 'image-element', run: () => prepareViaImageElement(source, { objectUrl: objectUrl as string }, options, budget) });
     }
 
@@ -573,7 +593,7 @@ export async function prepareCloudflareReferenceImage(source: File, options: Pre
     // Only now is a data URL built: it holds a base64 copy of the file, so it is a genuine
     // last resort rather than the default path. Its read and subsequent <img> decode use the same
     // deadline as the header probe and bitmap strategy.
-    if (budget.remaining() > 0) {
+    if (budget.remaining() > 0 && allowFullDecode) {
       try {
         const dataUrl = await readDataUrl(source, options, budget);
         if (dataUrl && budget.remaining() > 0) {
@@ -601,7 +621,7 @@ export async function prepareCloudflareReferenceImage(source: File, options: Pre
   console.warn('[SignCraft] storefront photo preparation failed on every strategy.', {
     source: header ? `${header.format} ${header.width}x${header.height}` : 'unreadable header',
     strategies: attempts.map((attempt) => attempt.name).join(', '),
-    failures,
+    failureCount: failures.length,
   });
   throw failures[failures.length - 1] ?? new Error('Image preparation failed.');
 }

@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { messages } from '../i18n/messages';
+import { productMessages } from '../i18n/productMessages';
 
 export type Locale = 'fr' | 'en' | 'ar';
 type TranslationKey = keyof typeof messages.fr;
@@ -17,7 +18,7 @@ const LanguageContext = createContext<LanguageContextValue | null>(null);
 function translateWith(locale: Locale) {
   return (key: TranslationKey | string): string => {
     const selected = messages[locale] as Record<string, string>;
-    return selected[key] ?? (messages.fr as Record<string, string>)[key] ?? key;
+    return selected[key] ?? (productMessages[locale] as Record<string, string>)[key] ?? (messages.fr as Record<string, string>)[key] ?? (productMessages.fr as Record<string, string>)[key] ?? key;
   };
 }
 

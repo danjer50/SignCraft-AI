@@ -4,6 +4,7 @@ import type { AIConceptResult, SignConfiguration } from '../../domain/sign.js';
 export const MAX_AI_IMAGE_SIDE = 511;
 
 export interface ImageEditingRequest {
+  sourceIdentity?: string;
   sourceImage: File;
   configuration: SignConfiguration;
   prompt: string;

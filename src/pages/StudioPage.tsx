@@ -10,7 +10,7 @@ import {
   STEP_LABEL_KEYS,
   STEP_TITLE_KEYS,
   clampStep,
-  furthestReachableStep,
+  furthestEditableStep,
   generationBlockingMessageKey,
   parseStepParam,
   stepBlockingMessageKey,
@@ -27,6 +27,7 @@ import { StyleArt } from '../components/StyleArt';
 import { OptionalDetails } from '../components/OptionalDetails';
 import { GenerationProgress } from '../components/GenerationProgress';
 import { SafeImage } from '../components/SafeImage';
+import { photoIdentity } from '../domain/provenance';
 import { generateStorefrontConcept } from '../services/ai';
 import { clientConfig } from '../services/config';
 import { photoPrivacyMessageKey } from '../services/ai/presentation';
@@ -113,14 +114,14 @@ export function StudioPage() {
   const config = state.configuration;
   const flowState = { configuration: config, photo: state.photo };
   const urlStep = parseStepParam(searchParams.get('step'));
-  const step = clampStep(urlStep ?? state.step);
+  const step = Math.min(clampStep(urlStep ?? state.step), furthestEditableStep(flowState));
   const stepId: CustomerFlowStep = CUSTOMER_FLOW_STEPS[step - 1];
-  const allowedSteps = Math.max(step, furthestReachableStep(flowState));
+  const allowedSteps = Math.max(step, furthestEditableStep(flowState));
 
   // A shared or reloaded ?step= URL becomes the recoverable position for the next visit.
   useEffect(() => {
-    if (urlStep !== null && urlStep !== state.step) persistStep(urlStep);
-  }, [urlStep, state.step, persistStep]);
+    if (urlStep !== null && step !== state.step) persistStep(step);
+  }, [urlStep, step, state.step, persistStep]);
 
   const goToStep = (next: number) => {
     const target = clampStep(next);
@@ -153,7 +154,7 @@ export function StudioPage() {
     setBusy(true);
     setValidationMessage('');
     try {
-      const result = await generateStorefrontConcept({ sourceImage: photoFile, configuration: config });
+      const result = await generateStorefrontConcept({ sourceImage: photoFile, sourceIdentity: photoIdentity(state.photo), configuration: config });
       setConcept(result);
       navigate('/result');
     } catch {

@@ -1,9 +1,9 @@
-import { useRef, useState, type DragEvent, type ChangeEvent } from 'react';
+import { useEffect, useRef, useState, type DragEvent, type ChangeEvent } from 'react';
 import { ImagePlus, ImageUp, LoaderCircle, RefreshCw, Trash2 } from 'lucide-react';
 import { useProject } from '../context/ProjectContext';
 import { useLanguage } from '../context/LanguageContext';
 import { SafeImage } from './SafeImage';
-import { validateStorefrontImage } from '../services/upload';
+import { validateStorefrontImage, UploadError, uploadErrorMessageKey } from '../services/upload';
 import { clientConfig } from '../services/config';
 import { photoPrivacyMessageKey } from '../services/ai/presentation';
 
@@ -11,6 +11,8 @@ export function PhotoUploadField() {
   const { state, setPhotoFile, removePhoto } = useProject();
   const { t } = useLanguage();
   const inputRef = useRef<HTMLInputElement>(null);
+  const operation = useRef(0);
+  useEffect(() => () => { operation.current++; }, []);
   const [dragging, setDragging] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -24,15 +26,18 @@ export function PhotoUploadField() {
       setError(issue === 'too-large' ? t('studio.fileTooLarge') : issue === 'empty-file' ? t('studio.fileEmpty') : t('studio.fileTypeError'));
       return;
     }
+    const current = ++operation.current;
     setError('');
     setBusy(true);
     try {
       await setPhotoFile(file);
-    } catch {
-      setError(t('studio.fileTypeError'));
+    } catch (error) {
+      if (operation.current === current && !(error instanceof UploadError && error.code === 'cancelled')) setError(t(uploadErrorMessageKey(error)));
     } finally {
-      setBusy(false);
-      if (inputRef.current) inputRef.current.value = '';
+      if (operation.current === current) {
+        setBusy(false);
+        if (inputRef.current) inputRef.current.value = '';
+      }
     }
   };
 
@@ -77,7 +82,7 @@ export function PhotoUploadField() {
             <button className="icon-button" type="button" onClick={() => inputRef.current?.click()} aria-label={t('studio.replacePhoto')} title={t('studio.replacePhoto')}>
               <RefreshCw size={17} />
             </button>
-            <button className="icon-button danger-icon" type="button" onClick={() => { removePhoto(); setError(''); }} aria-label={t('studio.removePhoto')} title={t('studio.removePhoto')}>
+            <button className="icon-button danger-icon" type="button" onClick={() => { operation.current++; removePhoto(); setBusy(false); setError(''); }} aria-label={t('studio.removePhoto')} title={t('studio.removePhoto')}>
               <Trash2 size={17} />
             </button>
           </div>

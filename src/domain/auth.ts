@@ -44,6 +44,7 @@ export const AUTH_ERROR_CODES = [
   'METHOD_NOT_ALLOWED',
   'WRITE_STORE_NOT_CONFIGURED',
   'UNEXPECTED',
+  'SIGN_OUT_UNCONFIRMED',
 ] as const;
 export type AuthErrorCode = (typeof AUTH_ERROR_CODES)[number];
 

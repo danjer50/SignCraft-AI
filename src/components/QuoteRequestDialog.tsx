@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Check, CircleAlert, X } from 'lucide-react';
+import { conceptMatches, photoIdentity } from '../domain/provenance';
 import { useProject } from '../context/ProjectContext';
 import { useLanguage } from '../context/LanguageContext';
 import type { QuoteCustomer, QuoteRequest } from '../domain/sign';
@@ -43,7 +44,7 @@ export function QuoteRequestDialog({ open, onClose }: QuoteRequestDialogProps) {
     setBusy(true);
     setError('');
     const photo = state.photo;
-    const currentConcept = state.lastConcept;
+    const currentConcept = state.lastConcept?.status === 'GENERATED' && !conceptMatches(state.lastConcept, state.configuration, photoIdentity(photo)) ? null : state.lastConcept;
     const quoteConfiguration = {
       ...state.configuration,
       exactText: state.configuration.exactText.trim() ? state.configuration.exactText : state.configuration.businessName.trim(),

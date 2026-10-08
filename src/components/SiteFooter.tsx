@@ -39,6 +39,7 @@ export function SiteFooter() {
             <span className="footer-nav-label">{t('nav.account')}</span>
             {account ? (
               <>
+                {auth?.failure?.code === 'SIGN_OUT_UNCONFIRMED' && <span role="alert">{t('auth.logoutFailed')}</span>}
                 <Link to={homePathForRole(account.role)}>{t(`role.${account.role}`)} <ArrowUpRight size={14} /></Link>
                 <button className="footer-sign-out" type="button" onClick={() => void auth?.signOut()}>
                   <LogOut size={14} />{t('access.signOut')}

@@ -1,0 +1,11 @@
+import { describe, expect, it } from 'vitest';
+import { defaultDesign, designFingerprint, fromUnit, newProject, resizeDesign, toUnit, validateDesign, validateProject } from './model';
+import { applyTemplate, BUSINESS_TYPES, searchTemplates, TEMPLATE_LIBRARY } from './templates';
+
+describe('structured sign model and editable catalogue',()=>{
+ it('uses configurable physical units and preserves relative layout on resize',()=>{const d=defaultDesign();expect(fromUnit(3,'m')).toBe(3000);expect(toUnit(3000,'cm')).toBe(300);const result=resizeDesign(d,6000,1700);expect(result.objects[1].x).toBe(d.objects[1].x*2);expect(result.objects[1].height).toBe(d.objects[1].height*2);expect(d.dimensions.width).toBe(3000);});
+ it('validates every real template recipe, not flat image thumbnails',()=>{expect(BUSINESS_TYPES.length).toBeGreaterThan(25);expect(TEMPLATE_LIBRARY.length).toBeGreaterThan(300);for(const t of TEMPLATE_LIBRARY){const design=applyTemplate(t,'SABLE');expect(validateDesign(design),t.id).toBe(true);expect(design.objects.some((o)=>o.kind==='text'&&o.text==='SABLE')).toBe(true);}});
+ it('discovers multi-term professional directions',()=>{expect(searchTemplates('Luxury barber black gold',true)[0].id).toBe('barber-noir');expect(searchTemplates('café projecting warm LED',true)[0].id).toBe('cafe-blade');expect(searchTemplates('حلاق فاخر ذهبي',true)[0].id).toBe('barber-noir');});
+ it('rejects malformed geometry, colours, fonts, folded placement and missing dimensions',()=>{const d=defaultDesign();expect(validateDesign(d)).toBe(true);expect(validateDesign({...d,dimensions:{...d.dimensions,width:NaN}})).toBe(false);expect(validateDesign({...d,objects:[{...d.objects[0],color:'url(javascript:x)'}]})).toBe(false);expect(validateDesign({...d,placement:[d.placement[0],d.placement[2],d.placement[1],d.placement[3]]})).toBe(false);});
+ it('fingerprints every deterministic design input and rejects corrupted project versions',()=>{const p=newProject();expect(validateProject(p)).toBe(true);const first=designFingerprint(p.design);p.design.objects[1].fontId='manrope';expect(designFingerprint(p.design)).not.toBe(first);p.versions.push({id:'v1',name:'Version 1',createdAt:new Date().toISOString(),fingerprint:'forged',design:p.design});expect(validateProject(p)).toBe(false);});
+});

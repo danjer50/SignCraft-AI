@@ -35,7 +35,7 @@ export function authFailure(status: 400 | 401 | 403 | 405 | 429 | 501 | 503, cod
  */
 export function isSameOriginRequest(request: Request): boolean {
   const fetchSite = request.headers.get('sec-fetch-site');
-  if (fetchSite) return fetchSite === 'same-origin' || fetchSite === 'same-site' || fetchSite === 'none';
+  if (fetchSite && fetchSite !== 'same-origin' && fetchSite !== 'none') return false;
   const origin = request.headers.get('origin');
   if (!origin) return true;
   try {

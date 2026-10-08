@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import {
   DEFAULT_ITERATIONS,
   MINIMUM_ITERATIONS,
@@ -99,6 +99,10 @@ describe('password hashing', () => {
 });
 
 describe('session tokens and cookies', () => {
+  let ownerHash: string;
+  beforeAll(async () => { ownerHash = await fixtureHash(); });
+  function sessionEnvironment(overrides: Partial<AuthEnvironment> = {}): AuthEnvironment { return environment({ AUTH_OWNER_USERNAME: ownerAccount.username, AUTH_OWNER_EMAIL: ownerAccount.email, AUTH_OWNER_PASSWORD_HASH: ownerHash, ...overrides }); }
+
   it('signs and verifies a token that carries the role', async () => {
     const token = await signSessionToken({
       sub: ownerAccount.id,
@@ -109,10 +113,10 @@ describe('session tokens and cookies', () => {
       status: 'ACTIVE',
       iat: Math.floor(Date.now() / 1000),
       exp: Math.floor(Date.now() / 1000) + 600,
-    }, environment());
+    }, sessionEnvironment());
 
     expect(token).toBeTruthy();
-    const verified = await verifySessionToken(token as string, environment());
+    const verified = await verifySessionToken(token as string, sessionEnvironment());
     expect(verified.status).toBe('VALID');
     if (verified.status === 'VALID') {
       expect(verified.claims.role).toBe('ADMIN');
@@ -124,22 +128,22 @@ describe('session tokens and cookies', () => {
     const token = (await signSessionToken({
       sub: 'owner', sid: 's', role: 'ADMIN', username: 'owner', email: '', status: 'ACTIVE',
       iat: Math.floor(Date.now() / 1000), exp: Math.floor(Date.now() / 1000) + 600,
-    }, environment())) as string;
+    }, sessionEnvironment())) as string;
 
     const [payload, signature] = token.split('.');
     const forgedAdmin = JSON.stringify({ sub: 'attacker', sid: 'x', role: 'ADMIN', username: 'x', email: '', status: 'ACTIVE', iat: 0, exp: Math.floor(Date.now() / 1000) + 600 });
     const forgedPayload = Buffer.from(forgedAdmin, 'utf8').toString('base64url');
 
-    expect((await verifySessionToken(`${forgedPayload}.${signature}`, environment())).status).toBe('INVALID');
-    expect((await verifySessionToken(`${payload}.${signature!.slice(0, -2)}aa`, environment())).status).toBe('INVALID');
-    expect((await verifySessionToken(token, environment({ AUTH_SESSION_SECRET: 'a-completely-different-secret-value-32chars' }))).status).toBe('INVALID');
-    expect((await verifySessionToken('garbage', environment())).status).toBe('INVALID');
+    expect((await verifySessionToken(`${forgedPayload}.${signature}`, sessionEnvironment())).status).toBe('INVALID');
+    expect((await verifySessionToken(`${payload}.${signature!.slice(0, -2)}aa`, sessionEnvironment())).status).toBe('INVALID');
+    expect((await verifySessionToken(token, sessionEnvironment({ AUTH_SESSION_SECRET: 'a-completely-different-secret-value-32chars' }))).status).toBe('INVALID');
+    expect((await verifySessionToken('garbage', sessionEnvironment())).status).toBe('INVALID');
 
     const expired = (await signSessionToken({
       sub: 'owner', sid: 's', role: 'ADMIN', username: 'owner', email: '', status: 'ACTIVE',
       iat: Math.floor(Date.now() / 1000) - 7200, exp: Math.floor(Date.now() / 1000) - 3600,
-    }, environment())) as string;
-    expect((await verifySessionToken(expired, environment())).status).toBe('EXPIRED');
+    }, sessionEnvironment())) as string;
+    expect((await verifySessionToken(expired, sessionEnvironment())).status).toBe('EXPIRED');
   });
 
   it('refuses to sign or verify without a strong secret', async () => {
@@ -152,7 +156,7 @@ describe('session tokens and cookies', () => {
 
   it('issues an HttpOnly cookie and clears it on sign-out', async () => {
     const request = new Request('https://signcraft.example/api/auth/login', { method: 'POST' });
-    const issued = await issueSession(ownerAccount, environment(), request);
+    const issued = await issueSession(ownerAccount, sessionEnvironment(), request);
 
     expect(issued).not.toBeNull();
     const cookie = issued!.cookieHeader;
@@ -163,17 +167,17 @@ describe('session tokens and cookies', () => {
     expect(cookie).toContain('Path=/');
     expect(cookie).not.toContain(FIXTURE_SECRET);
 
-    const cleared = signedOutCookie(environment(), request);
+    const cleared = signedOutCookie(sessionEnvironment(), request);
     expect(cleared).toContain('Max-Age=0');
     expect(cleared).toContain('HttpOnly');
   });
 
   it('reads a session back from the cookie it issued', async () => {
-    const issued = (await issueSession(ownerAccount, environment()))!;
+    const issued = (await issueSession(ownerAccount, sessionEnvironment()))!;
     const token = issued.cookieHeader.split(';')[0]!;
     const request = new Request('https://signcraft.example/api/admin/overview', { headers: { cookie: token } });
 
-    const state = await readAuthState(request, environment());
+    const state = await readAuthState(request, sessionEnvironment());
     expect(state.status).toBe('AUTHENTICATED');
     if (state.status === 'AUTHENTICATED') {
       expect(state.account.role).toBe('ADMIN');
@@ -183,9 +187,9 @@ describe('session tokens and cookies', () => {
   });
 
   it('reports a missing, expired or malformed cookie instead of throwing', async () => {
-    expect((await readAuthState(new Request('https://signcraft.example/'), environment())).status).toBe('UNAUTHENTICATED');
+    expect((await readAuthState(new Request('https://signcraft.example/'), sessionEnvironment())).status).toBe('UNAUTHENTICATED');
     const malformed = new Request('https://signcraft.example/', { headers: { cookie: `${DEFAULT_COOKIE_NAME}=%E0%A4%A` } });
-    expect((await readAuthState(malformed, environment())).status).toBe('UNAUTHENTICATED');
+    expect((await readAuthState(malformed, sessionEnvironment())).status).toBe('UNAUTHENTICATED');
     expect((await readAuthState(new Request('https://signcraft.example/'), {})).status).toBe('UNAUTHENTICATED');
   });
 
@@ -197,9 +201,9 @@ describe('session tokens and cookies', () => {
     expect(sessionTtlMinutes({})).toBe(720);
     expect(sessionTtlMinutes({ AUTH_SESSION_TTL_MINUTES: '30' })).toBe(30);
     expect(sessionTtlMinutes({ AUTH_SESSION_TTL_MINUTES: '-5' })).toBe(720);
-    expect(signedOutCookie(environment({ AUTH_COOKIE_SAME_SITE: 'none' }), new Request('https://x.example/'))).toContain('SameSite=None');
+    expect(signedOutCookie(sessionEnvironment({ AUTH_COOKIE_SAME_SITE: 'none' }), new Request('https://x.example/'))).toContain('SameSite=None');
     // SameSite=None without HTTPS is downgraded: browsers would reject the cookie otherwise.
-    expect(signedOutCookie(environment({ AUTH_COOKIE_SAME_SITE: 'none' }), new Request('http://signcraft.example/'))).toContain('SameSite=Lax');
+    expect(signedOutCookie(sessionEnvironment({ AUTH_COOKIE_SAME_SITE: 'none' }), new Request('http://signcraft.example/'))).toContain('SameSite=Lax');
   });
 });
 

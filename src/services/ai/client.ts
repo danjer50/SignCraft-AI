@@ -5,6 +5,7 @@ import { DemoAIProvider } from './demoProvider';
 import type { ImageEditingRequest } from './contracts';
 import { buildStorefrontEditPrompt, SIGNCRAFT_PROMPT_VERSION } from './promptBuilder';
 import { prepareCloudflareReferenceImage } from './imagePreparation';
+import { makeProvenance } from '../../domain/provenance';
 import { isOverEditedRender, isUnchangedRender } from './renderComparison';
 
 function normalizedConfiguration(configuration: SignConfiguration): SignConfiguration {
@@ -20,6 +21,7 @@ interface ProviderDiagnostics {
   providerHttpStatus?: number;
   providerErrorMessage?: string;
   providerFailures?: AIProviderFailureDiagnostic[];
+  diagnosticId?: string;
 }
 
 function parseProviderDiagnostics(body: Record<string, unknown>): ProviderDiagnostics {
@@ -86,6 +88,7 @@ export const AI_REQUEST_TIMEOUT_MS = 120_000;
 export async function generateStorefrontConcept(
   request: Omit<ImageEditingRequest, 'prompt' | 'preserveSourceArchitecture' | 'exactTextOverlayRequired'>,
 ): Promise<AIConceptResult> {
+  const provenance = makeProvenance(request.configuration, request.sourceIdentity ?? `${request.sourceImage.name}:${request.sourceImage.size}:${request.sourceImage.type}`);
   const configuration = normalizedConfiguration(request.configuration);
   const fullRequest: ImageEditingRequest = {
     ...request,
@@ -108,6 +111,7 @@ export async function generateStorefrontConcept(
     );
   }
 
+  let diagnosticId: string | undefined;
   let requestStarted = false;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), AI_REQUEST_TIMEOUT_MS);
@@ -119,7 +123,12 @@ export async function generateStorefrontConcept(
 
     requestStarted = true;
     const response = await fetch('/api/ai/generate-sign', { method: 'POST', body: payload, signal: controller.signal });
-    const body = (await response.json().catch(() => ({}))) as {
+    diagnosticId = response.headers.get('x-ai-diagnostic-id') ?? undefined;
+    const parsed = await response.json().catch((error: unknown) => {
+      if (controller.signal.aborted || error instanceof DOMException && error.name === 'AbortError') throw error;
+      return {};
+    });
+    const body = (parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}) as {
       status?: string;
       providerId?: string;
       imageUrl?: string;
@@ -151,7 +160,7 @@ export async function generateStorefrontConcept(
         );
       }
       return {
-        status: 'GENERATED',
+        status: 'GENERATED', provenance, diagnosticId,
         providerId: typeof body.providerId === 'string' ? body.providerId : 'server-ai',
         imageUrl: body.imageUrl as string,
         createdAt: new Date().toISOString(),
@@ -165,7 +174,7 @@ export async function generateStorefrontConcept(
       'SENT_TO_SERVER',
       typeof body.message === 'string' ? body.message : 'The secure server did not confirm successful AI processing.',
       typeof body.providerId === 'string' ? body.providerId : 'server-ai-api',
-      parseProviderDiagnostics(body),
+      { ...parseProviderDiagnostics(body), diagnosticId },
     );
   } catch (error) {
     const aborted = controller.signal.aborted || (error instanceof DOMException && error.name === 'AbortError');
@@ -174,7 +183,7 @@ export async function generateStorefrontConcept(
       return errorResult(
         'AI_TIMEOUT',
         requestStarted ? 'UNKNOWN' : 'LOCAL_ONLY',
-        'The secure image service did not answer in time. No result was confirmed; you can retry.',
+        'The secure image service did not answer in time. No result was confirmed; you can retry.', 'signcraft-ai-api', { diagnosticId },
       );
     }
     return errorResult(

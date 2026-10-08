@@ -1,3 +1,5 @@
+import { accountVersion, durableSessionsRequired, findStoredAccount } from './accountState.js';
+import { getDatabase } from '../storage/database.js';
 import { isAccountRole, isAccountStatus, type AuthAccount } from '../../src/domain/auth.js';
 import type { AuthEnvironment, AuthState, IssuedSession, SessionClaims } from './types.js';
 
@@ -176,6 +178,7 @@ export async function verifySessionToken(token: string, environment: AuthEnviron
     status: 'VALID',
     claims: {
       sub: source.sub,
+      accountVersion: typeof source.accountVersion === 'string' ? source.accountVersion : undefined,
       sid: source.sid,
       role: source.role,
       username: typeof source.username === 'string' ? source.username.slice(0, 80) : '',
@@ -199,12 +202,18 @@ export async function issueSession(
   request: Request | null = null,
 ): Promise<IssuedSession | null> {
   if (!signingKey(environment)) return null;
+  const stored = await findStoredAccount(environment, account.id, true);
+  if (!stored) return null;
+  const database = await getDatabase(environment);
+  if (!database && durableSessionsRequired(environment)) return null;
+  const version = accountVersion(stored);
+  const sid = randomId(16);
   const ttlMinutes = sessionTtlMinutes(environment);
   const issuedAt = Math.floor(Date.now() / 1000);
   const expiresAtSeconds = issuedAt + ttlMinutes * 60;
   const token = await signSessionToken({
     sub: account.id,
-    sid: randomId(16),
+    sid, accountVersion: version,
     role: account.role,
     username: account.username,
     email: account.email,
@@ -213,6 +222,7 @@ export async function issueSession(
     exp: expiresAtSeconds,
   }, environment);
   if (!token) return null;
+  if (database) await database.query('INSERT INTO sessions(id,account_id,account_version,expires_at,revoked) VALUES(?,?,?,?,0)', [sid,account.id,version,expiresAtSeconds*1000]);
   return {
     cookieHeader: buildCookie(environment, request, token, ttlMinutes * 60),
     expiresAt: new Date(expiresAtSeconds * 1000).toISOString(),
@@ -241,18 +251,37 @@ export async function readAuthState(request: Request, environment: AuthEnvironme
 
   const claims = verification.claims;
   if (claims.status !== 'ACTIVE') return { status: 'UNAUTHENTICATED', reason: 'INVALID' };
+  const current = await findStoredAccount(environment, claims.sub, true);
+  if (!current || current.status !== 'ACTIVE' || accountVersion(current) !== claims.accountVersion) return { status: 'UNAUTHENTICATED', reason: 'INVALID' };
+  const database = await getDatabase(environment);
+  if (!database && durableSessionsRequired(environment)) return { status: 'UNAUTHENTICATED', reason: 'NOT_CONFIGURED' };
+  if (database) {
+    const result = await database.query('SELECT revoked,expires_at,account_version FROM sessions WHERE id = ? AND account_id = ?', [claims.sid,claims.sub]);
+    const session = result.rows[0];
+    if (!session || Number(session.revoked) !== 0 || Number(session.expires_at) <= Date.now() || session.account_version !== claims.accountVersion) return { status: 'UNAUTHENTICATED', reason: 'INVALID' };
+  }
 
   return {
     status: 'AUTHENTICATED',
     account: {
       id: claims.sub,
-      username: claims.username,
-      email: claims.email,
-      role: claims.role,
-      status: claims.status,
+      username: current.username,
+      email: current.email,
+      role: current.role,
+      status: current.status,
       createdAt: new Date(claims.iat * 1000).toISOString(),
     },
     claims,
     expiresAt: new Date(claims.exp * 1000).toISOString(),
   };
+}
+
+export async function revokeSession(request: Request, environment: AuthEnvironment): Promise<void> {
+  const token = readSessionToken(request, environment);
+  if (!token) return;
+  const verification = await verifySessionToken(token, environment);
+  if (verification.status !== 'VALID') return;
+  const database = await getDatabase(environment);
+  if (!database && durableSessionsRequired(environment)) throw new Error('Session revocation store unavailable.');
+  if (database) await database.query('UPDATE sessions SET revoked = 1 WHERE id = ? AND account_id = ?', [verification.claims.sid, verification.claims.sub]);
 }

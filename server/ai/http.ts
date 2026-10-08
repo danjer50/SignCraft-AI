@@ -39,7 +39,10 @@ export async function postMultipart(
       body: form,
       signal: controller.signal,
     });
-    const body = await response.json().catch(() => null);
+    const body = await response.json().catch((error: unknown) => {
+      if (controller.signal.aborted || error instanceof DOMException && error.name === 'AbortError') throw error;
+      return null;
+    });
     return { ok: response.ok, status: response.status, body, aborted: false };
   } catch (error) {
     const aborted = controller.signal.aborted || (error instanceof DOMException && error.name === 'AbortError');
@@ -72,7 +75,10 @@ export async function postJson(
       body: JSON.stringify(payload),
       signal: controller.signal,
     });
-    const body = await response.json().catch(() => null);
+    const body = await response.json().catch((error: unknown) => {
+      if (controller.signal.aborted || error instanceof DOMException && error.name === 'AbortError') throw error;
+      return null;
+    });
     return { ok: response.ok, status: response.status, body, aborted: false };
   } catch (error) {
     const aborted = controller.signal.aborted || (error instanceof DOMException && error.name === 'AbortError');

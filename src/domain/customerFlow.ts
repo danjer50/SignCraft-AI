@@ -112,3 +112,10 @@ export function generationBlockingMessageKey(state: CustomerFlowState): string |
 }
 
 export { MAX_SIGN_MATERIALS };
+
+/** A restored preview unlocks non-destructive brief editing, never generation. */
+export function furthestEditableStep(state: CustomerFlowState): number {
+  if (!state.photo?.file && !state.photo?.previewUrl) return 1;
+  if (state.configuration.businessName.trim().length < 2) return 2;
+  return CUSTOMER_FLOW_STEP_COUNT;
+}

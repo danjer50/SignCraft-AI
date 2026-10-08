@@ -10,6 +10,7 @@ import { useQuoteDialog } from '../components/QuoteDialogContext';
 import { useLanguage } from '../context/LanguageContext';
 import { useProject } from '../context/ProjectContext';
 import { SIGN_STYLES, type SignStyle } from '../domain/sign';
+import { photoIdentity, conceptMatches } from '../domain/provenance';
 import { generateStorefrontConcept } from '../services/ai';
 import { clientConfig } from '../services/config';
 import { aiErrorMessageKey, photoPrivacyMessageKey } from '../services/ai/presentation';
@@ -36,6 +37,7 @@ export function ResultPage() {
   const concept = state.lastConcept;
   const config = state.configuration;
   const generated = concept?.status === 'GENERATED';
+  const stale = generated && !conceptMatches(concept, config, photoIdentity(state.photo));
   const localeTag = locale === 'fr' ? 'fr-FR' : locale === 'ar' ? 'ar-TN' : 'en-US';
 
   if (!state.photo && !concept) {
@@ -64,7 +66,7 @@ export function ResultPage() {
   // The demo sentence is only true in demo mode: in `api` mode the browser really did ask the
   // server, so an empty stage is reported as an unanswered AI request instead of a demo limitation.
   const unavailableBodyKey = clientConfig.aiMode === 'api' ? 'result.unavailableApiBody' : 'result.unavailableBody';
-  const resultStatusLabel = generated
+  const resultStatusLabel = stale ? t('result.stale') : generated
     ? t('result.generated')
     : concept?.status === 'ERROR' || clientConfig.aiMode === 'api'
       ? t('ai.failedBadge')
@@ -95,7 +97,7 @@ export function ResultPage() {
     generationLock.current = true;
     setBusy(true);
     try {
-      const result = await generateStorefrontConcept({ sourceImage: state.photo.file, configuration: config });
+      const result = await generateStorefrontConcept({ sourceImage: state.photo.file, sourceIdentity: photoIdentity(state.photo), configuration: config });
       setConcept(result);
     } catch {
       setConcept({
@@ -120,9 +122,10 @@ export function ResultPage() {
       <Link className="back-link" to="/studio"><ArrowLeft size={15} />{t('result.editBrief')}</Link>
       <div className="result-heading">
         <div><span className="eyebrow"><span className="eyebrow-line" />{t('result.eyebrow')}</span><h1>{t('result.title')}</h1><p>{t('result.lead')}</p></div>
-        <span className={`result-status-pill${generated ? ' is-ready' : ''}`}><span className={generated ? 'status-ready-dot' : 'status-offline-dot'} />{resultStatusLabel}</span>
+        <span className={`result-status-pill${generated && !stale ? ' is-ready' : ''}`}><span className={generated && !stale ? 'status-ready-dot' : 'status-offline-dot'} />{resultStatusLabel}</span>
       </div>
 
+      {stale && <div className="result-unavailable-banner" role="status">{t('result.staleBody')}</div>}
       {busy && <GenerationProgress variant="banner" />}
 
       <section className="result-stage" aria-busy={busy}>

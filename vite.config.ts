@@ -16,6 +16,9 @@ import react from '@vitejs/plugin-react';
 type AuthHandler = (request: Request, environment: Record<string, string | undefined>) => Promise<Response>;
 
 const DEV_API_ROUTES: Array<{ path: string; module: string; handler: string }> = [
+  { path: '/api/studio', module: '/server/http/studio.ts', handler: 'handleStudio' },
+  { path: '/api/runtime', module: '/server/http/studio.ts', handler: 'handleRuntime' },
+  { path: '/api/quotes', module: '/server/http/quotes.ts', handler: 'handleQuoteSubmission' },
   { path: '/api/auth/login', module: '/server/http/auth.ts', handler: 'handleLogin' },
   { path: '/api/auth/logout', module: '/server/http/auth.ts', handler: 'handleLogout' },
   { path: '/api/auth/session', module: '/server/http/auth.ts', handler: 'handleSession' },

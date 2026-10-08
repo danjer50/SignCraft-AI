@@ -19,7 +19,7 @@ export function TransformationSlider({ beforeImage, afterImage, beforeLabel, aft
   const [position, setPosition] = useState(variant === 'hero' ? 62 : 50);
 
   return (
-    <div className={`comparison-slider comparison-slider--${variant}`} style={{ '--compare-position': `${position}%` } as React.CSSProperties}>
+    <div dir="ltr" className={`comparison-slider comparison-slider--${variant}`} style={{ '--compare-position': `${position}%` } as React.CSSProperties}>
       <SafeImage className="comparison-base" src={afterImage} alt={afterLabel} />
       {beforeImage && <SafeImage className="comparison-overlay" src={beforeImage} alt={beforeLabel} />}
       <div className="comparison-labels" aria-hidden="true">

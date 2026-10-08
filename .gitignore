@@ -8,3 +8,8 @@ coverage/
 *.log
 *.tsbuildinfo
 .vite/
+
+.cache/
+.signcraft-data/
+playwright-report/
+test-results/

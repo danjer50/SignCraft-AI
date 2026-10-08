@@ -98,7 +98,7 @@ describe('boot never falls into the root crash screen', () => {
     await renderApp('/studio?step=5');
 
     expect(crashScreen()).toBeNull();
-    expect(screen.getByText('Quelles matières pour votre enseigne ?')).toBeInTheDocument();
+    expect(screen.getByText('Ajoutez une photo de votre devanture')).toBeInTheDocument();
   });
 
   it('migrates a legacy single-material draft instead of dropping the choice', async () => {
@@ -124,8 +124,9 @@ describe('boot never falls into the root crash screen', () => {
     await renderApp('/studio?step=5');
 
     expect(crashScreen()).toBeNull();
-    expect(screen.getByRole('checkbox', { name: /Acrylique \(plexiglas\)/i })).toBeChecked();
-    expect(screen.getByText('1 / 6')).toBeInTheDocument();
+    const saved = JSON.parse(localStorage.getItem(STUDIO_DRAFT_KEY)!);
+    expect(saved.configuration.materials).toEqual(['acrylic']);
+    expect(screen.getByText('Ajoutez une photo de votre devanture')).toBeInTheDocument();
   });
 
   it('boots a draft saved by the release that predates the step flow', async () => {

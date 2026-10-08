@@ -1,6 +1,6 @@
 import type { SignConfiguration, SignMaterial } from '../../domain/sign.js';
 import { normalizeMaterials } from '../../domain/sign.js';
-import { buildPlacementSpecification, generateStructuredDesignSpecification } from './designSpecification';
+import { buildPlacementSpecification, generateStructuredDesignSpecification } from './designSpecification.js';
 
 export const SIGNCRAFT_PROMPT_VERSION = 'storefront-inpaint-v7';
 
