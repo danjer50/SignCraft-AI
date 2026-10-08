@@ -138,26 +138,52 @@ function dataUrlToBlob(dataUrl: string): Blob | null {
  * Treating that single result as fatal is what produced the production failure, so a null/failed
  * `toBlob` now falls through to a lower quality, then to `toDataURL`, and only then gives up.
  */
-async function encodeCanvas(canvas: HTMLCanvasElement, lastModified: number, timeoutMs: number): Promise<File | null> {
+async function encodeCanvas(
+  canvas: HTMLCanvasElement,
+  lastModified: number,
+  options: PreparationOptions,
+  budget: PreparationBudget,
+): Promise<File | null> {
+  const timeoutMessage = 'Encoding the photo timed out.';
+  const perEncodeTimeout = encodeTimeout(options);
+
   for (const quality of JPEG_QUALITIES) {
+    budget.assertAvailable(timeoutMessage);
     if (typeof canvas.toBlob === 'function') {
-      const pending = new Promise<Blob | null>((resolve) => {
+      let viaBlob: Blob | null = null;
+      try {
+        viaBlob = await budget.run(() => new Promise<Blob | null>((resolve) => {
+          try {
+            canvas.toBlob((blob) => resolve(blob ?? null), 'image/jpeg', quality);
+          } catch {
+            resolve(null);
+          }
+        }), perEncodeTimeout, timeoutMessage);
+      } catch (error) {
+        if (budget.remaining() <= 0) throw error;
+      }
+
+      if (viaBlob) {
         try {
-          canvas.toBlob((blob) => resolve(blob ?? null), 'image/jpeg', quality);
-        } catch {
-          resolve(null);
+          const file = await budget.run(() => toPreparedFile(viaBlob, lastModified), perEncodeTimeout, timeoutMessage);
+          if (file) return file;
+        } catch (error) {
+          if (budget.remaining() <= 0) throw error;
         }
-      });
-      const viaBlob = await withTimeout(pending, timeoutMs, 'Encoding the photo timed out.').catch(() => null);
-      const file = await toPreparedFile(viaBlob, lastModified);
-      if (file) return file;
+      }
     }
+
     if (typeof canvas.toDataURL === 'function') {
       try {
-        const file = await toPreparedFile(dataUrlToBlob(canvas.toDataURL('image/jpeg', quality)), lastModified);
+        const file = await budget.run(
+          () => toPreparedFile(dataUrlToBlob(canvas.toDataURL('image/jpeg', quality)), lastModified),
+          perEncodeTimeout,
+          timeoutMessage,
+        );
         if (file) return file;
-      } catch {
-        // Try the next quality/encoder combination.
+      } catch (error) {
+        if (budget.remaining() <= 0) throw error;
+        // Try the next quality/encoder combination while the shared deadline still permits it.
       }
     }
   }
@@ -210,13 +236,15 @@ async function downscaleToReference(
   source: CanvasImageSource,
   sourceSize: Dimensions,
   lastModified: number,
-  timeoutMs: number,
+  options: PreparationOptions,
+  budget: PreparationBudget,
 ): Promise<File> {
+  budget.assertAvailable('Encoding the photo timed out.');
   const target = scaledSize(sourceSize);
   if (longestSide(sourceSize) <= SINGLE_DRAW_MAX_SIDE) {
     const canvas = draw(source, target);
     try {
-      const file = await encodeCanvas(canvas, lastModified, timeoutMs);
+      const file = await encodeCanvas(canvas, lastModified, options, budget);
       if (!file) throw new Error('Image compression failed.');
       return file;
     } finally {
@@ -229,7 +257,7 @@ async function downscaleToReference(
   try {
     const canvas = draw(intermediate, target);
     try {
-      const file = await encodeCanvas(canvas, lastModified, timeoutMs);
+      const file = await encodeCanvas(canvas, lastModified, options, budget);
       if (!file) throw new Error('Image compression failed.');
       return file;
     } finally {
@@ -241,70 +269,149 @@ async function downscaleToReference(
 }
 
 interface PreparationBudget {
-  /** Time left for the next strategy, never below zero. */
+  /** Time left before the one deadline shared by probing, decoding, encoding and fallbacks. */
   remaining(): number;
+  assertAvailable(message: string): void;
+  run<T>(
+    work: () => Promise<T> | T,
+    maxDurationMs: number,
+    message: string,
+    onTimeout?: () => void,
+    onLateValue?: (value: T) => void,
+  ): Promise<T>;
 }
 
 function createBudget(options: PreparationOptions): PreparationBudget {
-  const total = Number.isFinite(options.totalTimeoutMs) ? (options.totalTimeoutMs as number) : DEFAULT_TOTAL_TIMEOUT_MS;
-  const deadline = Date.now() + total;
-  return { remaining: () => Math.max(0, deadline - Date.now()) };
+  const configuredTotal = Number.isFinite(options.totalTimeoutMs)
+    ? Math.max(0, options.totalTimeoutMs as number)
+    : DEFAULT_TOTAL_TIMEOUT_MS;
+  const deadline = Date.now() + configuredTotal;
+  const remaining = () => Math.max(0, deadline - Date.now());
+
+  return {
+    remaining,
+    assertAvailable(message) {
+      if (remaining() <= 0) throw new Error(message);
+    },
+    run<T>(
+      work: () => Promise<T> | T,
+      maxDurationMs: number,
+      message: string,
+      onTimeout?: () => void,
+      onLateValue?: (value: T) => void,
+    ): Promise<T> {
+      const available = remaining();
+      const configuredDuration = Number.isFinite(maxDurationMs) ? Math.max(0, maxDurationMs) : 0;
+      const timeoutMs = Math.min(available, configuredDuration);
+      if (timeoutMs <= 0) {
+        onTimeout?.();
+        return Promise.reject(new Error(message));
+      }
+      const pending = Promise.resolve().then(work);
+      return withTimeout(pending, timeoutMs, message, () => remaining() <= 0, onTimeout, onLateValue);
+    },
+  };
 }
 
-function strategyTimeout(options: PreparationOptions, budget: PreparationBudget): number {
-  const perStrategy = Number.isFinite(options.strategyTimeoutMs)
-    ? (options.strategyTimeoutMs as number)
+function strategyTimeout(options: PreparationOptions): number {
+  return Number.isFinite(options.strategyTimeoutMs)
+    ? Math.max(0, options.strategyTimeoutMs as number)
     : DEFAULT_STRATEGY_TIMEOUT_MS;
-  if (!Number.isFinite(options.totalTimeoutMs)) return perStrategy;
-  return Math.max(1, Math.min(perStrategy, budget.remaining()));
 }
 
-function encodeTimeout(options: PreparationOptions, budget: PreparationBudget): number {
-  const perEncode = Number.isFinite(options.encodeTimeoutMs)
-    ? (options.encodeTimeoutMs as number)
+function encodeTimeout(options: PreparationOptions): number {
+  return Number.isFinite(options.encodeTimeoutMs)
+    ? Math.max(0, options.encodeTimeoutMs as number)
     : DEFAULT_ENCODE_TIMEOUT_MS;
-  if (!Number.isFinite(options.totalTimeoutMs)) return perEncode;
-  return Math.max(1, Math.min(perEncode, budget.remaining()));
+}
+
+function withTimeout<T>(
+  work: Promise<T>,
+  timeoutMs: number,
+  message: string,
+  totalExpired?: () => boolean,
+  onTimeout?: () => void,
+  onLateValue?: (value: T) => void,
+): Promise<T> {
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    onTimeout?.();
+    return Promise.reject(new Error(message));
+  }
+
+  const stageDeadline = Date.now() + timeoutMs;
+  return new Promise<T>((resolve, reject) => {
+    let settled = false;
+    const rejectForTimeout = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      onTimeout?.();
+      reject(new Error(message));
+    };
+    const timer = setTimeout(rejectForTimeout, timeoutMs);
+
+    work.then(
+      (value) => {
+        if (settled) {
+          try {
+            onLateValue?.(value);
+          } catch {
+            // Late-resource cleanup must never create a second unhandled failure.
+          }
+          return;
+        }
+        if (Date.now() >= stageDeadline || totalExpired?.()) {
+          try {
+            onLateValue?.(value);
+          } catch {
+            // Late-resource cleanup must never create a second unhandled failure.
+          }
+          rejectForTimeout();
+          return;
+        }
+        settled = true;
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        if (settled) return;
+        if (Date.now() >= stageDeadline || totalExpired?.()) {
+          rejectForTimeout();
+          return;
+        }
+        settled = true;
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
 }
 
 /**
- * Decode through `createImageBitmap` with a watchdog that still releases the bitmap if the decode
- * finishes *after* the watchdog fired — otherwise a slow decode would leak the very allocation the
- * timeout exists to protect against.
+ * Decode with one watchdog. A timed-out browser decode cannot be cancelled, so never start another
+ * bitmap decode as a fallback; if this one eventually resolves, close it instead of retaining it.
  */
-async function decodeBitmapWithTimeout(source: File, bitmapOptions: ImageBitmapOptions, timeoutMs: number): Promise<ImageBitmap> {
-  const pending = createImageBitmap(source, bitmapOptions);
-  let timedOut = false;
-  pending.then(
-    (bitmap) => {
-      if (!timedOut) return;
-      try {
-        bitmap.close();
-      } catch {
-        // Already released.
-      }
-    },
-    () => {
-      // The rejection is reported by the awaited promise below.
-    },
-  );
+function closeBitmap(bitmap: ImageBitmap): void {
   try {
-    return await withTimeout(pending, timeoutMs, 'Decoding the photo timed out.');
-  } catch (error) {
-    timedOut = true;
-    throw error;
+    bitmap.close();
+  } catch {
+    // Already released.
   }
 }
 
-function withTimeout<T>(work: Promise<T>, timeoutMs: number, message: string): Promise<T> {
-  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) return work;
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(message)), timeoutMs);
-    work.then(
-      (value) => { clearTimeout(timer); resolve(value); },
-      (error) => { clearTimeout(timer); reject(error); },
-    );
-  });
+function decodeBitmapWithTimeout(
+  source: File,
+  bitmapOptions: ImageBitmapOptions,
+  timeoutMs: number,
+  budget: PreparationBudget,
+): Promise<ImageBitmap> {
+  return budget.run(
+    () => createImageBitmap(source, bitmapOptions),
+    timeoutMs,
+    'Decoding the photo timed out.',
+    undefined,
+    closeBitmap,
+  );
 }
 
 /**
@@ -329,17 +436,21 @@ async function prepareViaImageBitmap(source: File, header: ImageHeader | null, o
   let lastError: unknown = new Error('createImageBitmap rejected every option combination.');
   for (const bitmapOptions of attempts) {
     try {
-      bitmap = await decodeBitmapWithTimeout(source, bitmapOptions, strategyTimeout(options, budget));
+      bitmap = await decodeBitmapWithTimeout(source, bitmapOptions, strategyTimeout(options), budget);
       break;
     } catch (error) {
       lastError = error;
+      // Retrying after an ordinary decode failure or timeout can leave several uncancellable
+      // decoders competing for the same browser resources. Simpler options are only a TypeError
+      // compatibility fallback; all other errors go straight to the existing <img> strategy.
+      if (!(error instanceof TypeError)) throw error;
     }
   }
   if (!bitmap) throw lastError;
 
   try {
     if (!bitmap.width || !bitmap.height) throw new Error('The source image has invalid dimensions.');
-    return await downscaleToReference(bitmap, { width: bitmap.width, height: bitmap.height }, source.lastModified, encodeTimeout(options, budget));
+    return await downscaleToReference(bitmap, { width: bitmap.width, height: bitmap.height }, source.lastModified, options, budget);
   } finally {
     // Freed before encoding finishes only after the draw, so a huge bitmap never lingers.
     bitmap.close();
@@ -367,16 +478,23 @@ async function prepareViaImageElement(source: File, sourceUrl: ImageElementSourc
   if (typeof Image !== 'function') throw new Error('Image decoding is not supported in this browser.');
   const url = sourceUrl.objectUrl ?? sourceUrl.dataUrl;
   if (!url) throw new Error('No image source is available for decoding.');
+  budget.assertAvailable('Decoding the photo timed out.');
   const image = new Image();
   image.decoding = 'async';
   try {
-    await withTimeout(new Promise<void>((resolve, reject) => {
+    await budget.run(() => new Promise<void>((resolve, reject) => {
       image.onload = () => resolve();
       image.onerror = () => reject(new Error('The source image could not be decoded.'));
       image.src = url;
-    }), strategyTimeout(options, budget), 'Decoding the photo timed out.');
+    }), strategyTimeout(options), 'Decoding the photo timed out.');
     if (!image.naturalWidth || !image.naturalHeight) throw new Error('The source image has invalid dimensions.');
-    return await downscaleToReference(image, { width: image.naturalWidth, height: image.naturalHeight }, source.lastModified, encodeTimeout(options, budget));
+    return await downscaleToReference(
+      image,
+      { width: image.naturalWidth, height: image.naturalHeight },
+      source.lastModified,
+      options,
+      budget,
+    );
   } finally {
     // Drop the reference to the decoded image so the browser can reclaim it immediately.
     try {
@@ -388,67 +506,83 @@ async function prepareViaImageElement(source: File, sourceUrl: ImageElementSourc
 }
 
 /** Last-resort URL: some environments refuse `blob:` object URLs but accept a `data:` URL. */
-function readDataUrl(file: Blob): Promise<string | null> {
-  return new Promise((resolve) => {
+function readDataUrl(file: Blob, options: PreparationOptions, budget: PreparationBudget): Promise<string | null> {
+  let reader: FileReader | null = null;
+  return budget.run(() => new Promise((resolve) => {
     try {
-      const reader = new FileReader();
-      reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : null);
+      reader = new FileReader();
+      reader.onload = () => resolve(typeof reader?.result === 'string' ? reader.result : null);
       reader.onerror = () => resolve(null);
+      reader.onabort = () => resolve(null);
       reader.readAsDataURL(file);
     } catch {
       resolve(null);
+    }
+  }), strategyTimeout(options), 'Reading the photo timed out.', () => {
+    try {
+      reader?.abort();
+    } catch {
+      // The FileReader may already have completed or been released.
     }
   });
 }
 
 /**
- * Prepare a temporary, low-resolution JPEG reference for the AI providers. The source File held by
- * the project remains unchanged and is never replaced, and only the resized copy is ever uploaded.
+ * Prepare a temporary, low-resolution reference for the AI providers. The source File held by the
+ * project remains unchanged and is never replaced, and only the resized copy is ever uploaded.
  *
- * The pipeline is a ladder rather than a single attempt, because the failure that reached production
- * was a *single* rejected decoder option or a *single* null encoder result discarding an otherwise
- * perfectly good photo:
- *
- * 1. header probe (free) → correct resize axis and oriented dimensions;
- * 2. `createImageBitmap` with the richest options, then simpler ones, then none;
- * 3. `<img>` over an object URL, then over a data URL;
- * 4. staged, bounded downscale → encoder ladder (`toBlob`, lower quality, `toDataURL`);
- * 5. every strategy has a watchdog, so a decode that never settles cannot hang the studio.
+ * One deadline starts before the header probe and is shared by every decoder, encoder and URL
+ * fallback. Bitmap option retries are compatibility-only (TypeError); ordinary errors and timeouts
+ * move directly to the existing <img> fallback so abandoned decoders do not multiply.
  */
 export async function prepareCloudflareReferenceImage(source: File, options: PreparationOptions = {}): Promise<File> {
-  const header = await readImageHeader(source);
   const budget = createBudget(options);
+  const header = await budget.run(
+    () => readImageHeader(source),
+    budget.remaining(),
+    'Preparing the photo timed out.',
+  );
   const attempts: Array<{ name: string; run: () => Promise<File> }> = [];
+  const failures: unknown[] = [];
 
   let objectUrl: string | null = null;
-  if (typeof URL?.createObjectURL === 'function') {
-    try {
-      objectUrl = URL.createObjectURL(source);
-    } catch {
-      objectUrl = null;
-    }
-  }
-
-  attempts.push({ name: 'image-bitmap', run: () => prepareViaImageBitmap(source, header, options, budget) });
-  if (objectUrl) {
-    attempts.push({ name: 'image-element', run: () => prepareViaImageElement(source, { objectUrl: objectUrl as string }, options, budget) });
-  }
-
-  const failures: unknown[] = [];
   try {
+    budget.assertAvailable('Preparing the photo timed out.');
+    if (typeof URL?.createObjectURL === 'function') {
+      try {
+        objectUrl = URL.createObjectURL(source);
+      } catch {
+        objectUrl = null;
+      }
+    }
+
+    attempts.push({ name: 'image-bitmap', run: () => prepareViaImageBitmap(source, header, options, budget) });
+    if (objectUrl) {
+      attempts.push({ name: 'image-element', run: () => prepareViaImageElement(source, { objectUrl: objectUrl as string }, options, budget) });
+    }
+
     for (const attempt of attempts) {
+      if (budget.remaining() <= 0) break;
       try {
         return await attempt.run();
       } catch (error) {
         failures.push(error);
       }
     }
+
     // Only now is a data URL built: it holds a base64 copy of the file, so it is a genuine
-    // last resort rather than the default path.
-    const dataUrl = await readDataUrl(source);
-    if (dataUrl) {
+    // last resort rather than the default path. Its read and subsequent <img> decode use the same
+    // deadline as the header probe and bitmap strategy.
+    if (budget.remaining() > 0) {
       try {
-        return await prepareViaImageElement(source, { dataUrl }, options, budget);
+        const dataUrl = await readDataUrl(source, options, budget);
+        if (dataUrl && budget.remaining() > 0) {
+          try {
+            return await prepareViaImageElement(source, { dataUrl }, options, budget);
+          } catch (error) {
+            failures.push(error);
+          }
+        }
       } catch (error) {
         failures.push(error);
       }

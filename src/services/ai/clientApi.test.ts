@@ -61,6 +61,10 @@ describe('AI client failure recovery in API mode', () => {
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe('/api/ai/generate-sign');
     const payload = init?.body as FormData;
+    const uploadedImage = payload.get('storefrontImage') as File | null;
+    expect(uploadedImage).not.toBeNull();
+    expect(uploadedImage).not.toBe(sourceImage);
+    expect(uploadedImage).toMatchObject({ name: 'storefront.jpg', type: 'image/jpeg', size: 8 });
     const sentConfiguration = JSON.parse(String(payload.get('configuration'))) as typeof configuration;
     expect(sentConfiguration.materials).toEqual(['acrylic', 'ledModules']);
     expect(sentConfiguration.signArea?.strokes[0].points[0]).toEqual({ xPercent: 18, yPercent: 24 });

@@ -166,6 +166,14 @@ async function signature(file: File): Promise<number[]> {
   return Array.from((await bytesOf(file)).subarray(0, 3));
 }
 
+function delayHeaderRead(source: File, delayMs: number): void {
+  const bytes = jpegBytes(640, 480);
+  const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+  vi.spyOn(source, 'slice').mockImplementation(() => ({
+    arrayBuffer: () => new Promise<ArrayBuffer>((resolve) => setTimeout(() => resolve(buffer), delayMs)),
+  }) as Blob);
+}
+
 describe('Cloudflare reference-image preparation', () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -268,7 +276,8 @@ describe('Cloudflare reference-image preparation', () => {
   it('falls back to decoding through an <img> element when createImageBitmap fails', async () => {
     const source = jpegFile(1600, 800, { name: 'fallback.jpg', lastModified: 456 });
     const records = installCanvas();
-    vi.stubGlobal('createImageBitmap', vi.fn(async () => { throw new Error('createImageBitmap rejected this file'); }));
+    const createImageBitmapMock = vi.fn(async () => { throw new Error('createImageBitmap rejected this file'); });
+    vi.stubGlobal('createImageBitmap', createImageBitmapMock);
     const { revoke } = stubObjectUrl();
     FakeImage.dimensions = { width: 1600, height: 800 };
     vi.stubGlobal('Image', FakeImage);
@@ -280,8 +289,114 @@ describe('Cloudflare reference-image preparation', () => {
     expect(prepared.type).toBe('image/jpeg');
     expect(records[0].drawn).toEqual([{ width: 511, height: 256, source: expect.anything() }]);
     expect(await signature(prepared)).toEqual([0xff, 0xd8, 0xff]);
+    expect(createImageBitmapMock).toHaveBeenCalledTimes(1);
     expect(revoke).toHaveBeenCalledWith('blob:fake');
     expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('does not retry a timed-out bitmap decode and closes its late result while the img fallback succeeds', async () => {
+    const source = jpegFile(1600, 800, { name: 'slow-decoder.jpg' });
+    installCanvas();
+    const bitmapResolvers: Array<(bitmap: ImageBitmap) => void> = [];
+    const lateDecode = new Promise<ImageBitmap>((resolve) => { bitmapResolvers.push(resolve); });
+    const createImageBitmapMock = vi.fn(() => lateDecode);
+    vi.stubGlobal('createImageBitmap', createImageBitmapMock);
+    stubObjectUrl();
+    FakeImage.dimensions = { width: 1600, height: 800 };
+    vi.stubGlobal('Image', FakeImage);
+
+    const prepared = await prepareCloudflareReferenceImage(source, {
+      strategyTimeoutMs: 10,
+      totalTimeoutMs: 200,
+      encodeTimeoutMs: 30,
+    });
+
+    expect(prepared.type).toBe('image/jpeg');
+    expect(createImageBitmapMock).toHaveBeenCalledTimes(1);
+    expect(FakeImage.sources).toEqual(['blob:fake']);
+
+    const lateBitmap = { width: 1600, height: 800, close: vi.fn() } as unknown as ImageBitmap;
+    const resolveLateBitmap = bitmapResolvers[0];
+    if (!resolveLateBitmap) throw new Error('The bitmap decoder was not started.');
+    resolveLateBitmap(lateBitmap);
+    await lateDecode;
+    await Promise.resolve();
+    expect(lateBitmap.close).toHaveBeenCalledOnce();
+  });
+
+  it('includes the header probe in the shared deadline before starting image decoding', async () => {
+    const source = jpegFile(640, 480, { name: 'slow-header.jpg' });
+    delayHeaderRead(source, 100);
+    installCanvas();
+    const lateBitmap = { width: 640, height: 480, close: vi.fn() } as unknown as ImageBitmap;
+    const decodePromises: Promise<ImageBitmap>[] = [];
+    const createImageBitmapMock = vi.fn(() => {
+      const pending = new Promise<ImageBitmap>((resolve) => setTimeout(() => resolve(lateBitmap), 250));
+      decodePromises.push(pending);
+      return pending;
+    });
+    vi.stubGlobal('createImageBitmap', createImageBitmapMock);
+    stubObjectUrl();
+    FakeImage.dimensions = { width: 640, height: 480 };
+    vi.stubGlobal('Image', FakeImage);
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    await expect(prepareCloudflareReferenceImage(source, {
+      strategyTimeoutMs: 500,
+      totalTimeoutMs: 300,
+      encodeTimeoutMs: 50,
+    })).rejects.toThrow(/timed out/i);
+
+    expect(createImageBitmapMock).toHaveBeenCalledTimes(1);
+    expect(FakeImage.sources).toEqual([]);
+    const decodePending = decodePromises[0];
+    if (!decodePending) throw new Error('The bitmap decoder was not started.');
+    await decodePending;
+    await Promise.resolve();
+    expect(lateBitmap.close).toHaveBeenCalledOnce();
+  });
+
+  it('bounds the data-URL fallback by the same deadline that started before header probing', async () => {
+    const source = jpegFile(640, 480, { name: 'slow-data-url.jpg' });
+    delayHeaderRead(source, 30);
+    installCanvas();
+    const createImageBitmapMock = vi.fn(async () => { throw new Error('bitmap decoder rejected this image'); });
+    vi.stubGlobal('createImageBitmap', createImageBitmapMock);
+    stubObjectUrl();
+    FakeImage.failure = 'error';
+    vi.stubGlobal('Image', FakeImage);
+
+    const readAsDataURL = vi.fn();
+    const abort = vi.fn();
+    class HangingFileReader {
+      result: string | ArrayBuffer | null = null;
+      onload: FileReader['onload'] = null;
+      onerror: FileReader['onerror'] = null;
+      onabort: FileReader['onabort'] = null;
+      readAsArrayBuffer = vi.fn();
+      readAsDataURL = readAsDataURL;
+      abort = abort;
+    }
+    vi.stubGlobal('FileReader', HangingFileReader as unknown as typeof FileReader);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const timeout = await new Promise<'hung' | 'settled'>((resolve) => {
+      const timer = setTimeout(() => resolve('hung'), 300);
+      void prepareCloudflareReferenceImage(source, {
+        strategyTimeoutMs: 500,
+        totalTimeoutMs: 120,
+        encodeTimeoutMs: 20,
+      }).then(
+        () => { clearTimeout(timer); resolve('settled'); },
+        () => { clearTimeout(timer); resolve('settled'); },
+      );
+    });
+
+    expect(timeout).toBe('settled');
+    expect(createImageBitmapMock).toHaveBeenCalledTimes(1);
+    expect(FakeImage.sources).toEqual(['blob:fake']);
+    expect(readAsDataURL).toHaveBeenCalledOnce();
+    expect(abort).toHaveBeenCalledOnce();
+    expect(warn).toHaveBeenCalledOnce();
   });
 
   it('uses the toDataURL encoder when canvas.toBlob returns null, the production failure', async () => {
