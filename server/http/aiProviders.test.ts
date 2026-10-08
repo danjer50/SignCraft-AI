@@ -70,6 +70,36 @@ const openRouterOk = () => new Response(JSON.stringify({
 const failure = (status: number, message: string) => () => new Response(JSON.stringify({ error: { message } }), { status });
 
 describe('multi-provider AI generation through the API handler', () => {
+  it('records request validation failures before selecting a provider without logging request content', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+    const requestBody = 'PRIVATE_REQUEST_BODY_MUST_NOT_BE_LOGGED';
+    const request = new Request('https://signcraft.example/api/ai/generate-sign', {
+      method: 'POST',
+      headers: { 'content-type': 'text/plain' },
+      body: requestBody,
+    });
+    try {
+      const response = await handleAiGeneration(request, { GEMINI_API_KEY: GEMINI_KEY });
+      const records = (info.mock.calls as unknown[][])
+        .map((call) => typeof call[0] === 'string' ? call[0] : '')
+        .filter((message) => message.startsWith('[AI_DIAGNOSTIC] '))
+        .map((message) => JSON.parse(message.slice('[AI_DIAGNOSTIC] '.length)) as Record<string, unknown>);
+
+      expect(response.status).toBe(415);
+      expect(records.map((record) => record.stage)).toEqual(['pre-provider', 'error']);
+      expect(records[1]).toMatchObject({
+        provider: 'none',
+        providerReached: false,
+        httpStatus: 415,
+        errorCode: 'INVALID_CONTENT_TYPE',
+        validatedImageDataReturned: false,
+      });
+      expect(JSON.stringify(records)).not.toContain(requestBody);
+    } finally {
+      info.mockRestore();
+    }
+  });
+
   it('serves the request from Gemini when only Gemini is configured', async () => {
     const fetchMock = scriptedFetch({ gemini: geminiOk });
     vi.stubGlobal('fetch', fetchMock);
@@ -120,6 +150,40 @@ describe('multi-provider AI generation through the API handler', () => {
       expect(fetchMock).toHaveBeenCalledTimes(2);
     } finally {
       vi.unstubAllGlobals();
+    }
+  });
+
+  it('keeps the upstream error code in diagnostics without adding it to the public response', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+    vi.stubGlobal('fetch', scriptedFetch({
+      openrouter: () => new Response(JSON.stringify({
+        error: { code: 'invalid_model', message: 'The requested model is unavailable.' },
+      }), { status: 200, headers: { 'content-type': 'application/json; charset=utf-8' } }),
+    }));
+    try {
+      const response = await handleAiGeneration(makeRequest(), {
+        OPENROUTER_API_KEY: OPENROUTER_KEY,
+        AI_PROVIDER_ORDER: 'openrouter',
+      });
+      const body = await response.json() as Record<string, unknown>;
+      const diagnosticLines = (info.mock.calls as unknown[][])
+        .map((call) => typeof call[0] === 'string' ? call[0] : '')
+        .filter((line) => line.startsWith('[AI_DIAGNOSTIC] '));
+      const errorRecord = diagnosticLines
+        .map((line) => JSON.parse(line.slice('[AI_DIAGNOSTIC] '.length)) as Record<string, unknown>)
+        .find((record) => record.stage === 'error');
+
+      expect(response.status).toBe(422);
+      expect(body).not.toHaveProperty('providerErrorCode');
+      expect(errorRecord).toMatchObject({
+        providerErrorCode: 'invalid_model',
+        errorMessage: 'The requested model is unavailable.',
+        httpStatus: 200,
+        responseContentType: 'application/json',
+      });
+    } finally {
+      vi.unstubAllGlobals();
+      info.mockRestore();
     }
   });
 

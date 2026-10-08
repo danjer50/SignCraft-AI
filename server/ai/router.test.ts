@@ -105,6 +105,14 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+function diagnosticRecords(): Record<string, unknown>[] {
+  const calls = logSpy.mock.calls as unknown[][];
+  return calls
+    .map((call) => typeof call[0] === 'string' ? call[0] : '')
+    .filter((message) => message.startsWith('[AI_DIAGNOSTIC] '))
+    .map((message) => JSON.parse(message.slice('[AI_DIAGNOSTIC] '.length)) as Record<string, unknown>);
+}
+
 describe('provider chain resolution', () => {
   it('uses the documented default order and skips providers with no credentials', () => {
     const chain = resolveProviderChain('image-edit', geminiOnly);
@@ -234,12 +242,30 @@ describe('provider chain resolution', () => {
 describe('image-edit fallback chain', () => {
   it('returns the first provider result without calling the others', async () => {
     const fetchMock = scriptedFetch({ gemini: geminiImageResponse });
-    const result = await runImageEditTask(makeInput(), geminiOnly, { fetchImpl: fetchMock });
+    const input = makeInput();
+    const result = await runImageEditTask(input, geminiOnly, { fetchImpl: fetchMock });
 
     expect(result.status).toBe('GENERATED');
     if (result.status === 'GENERATED') expect(result.providerId).toBe('gemini');
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(logSpy).toHaveBeenCalledWith('[AI] gemini succeeded');
+
+    const records = diagnosticRecords();
+    expect(records.map((record) => record.stage)).toEqual([
+      'pre-provider', 'provider-request', 'provider-response', 'success',
+    ]);
+    expect(records.at(-1)).toMatchObject({
+      provider: 'gemini',
+      model: 'gemini-3.1-flash-image',
+      providerReached: true,
+      httpStatus: 200,
+      responseContentType: 'application/json',
+      validatedImageDataReturned: true,
+    });
+    const diagnosticText = JSON.stringify(records);
+    expect(diagnosticText).not.toContain(Buffer.from(input.image.bytes).toString('base64'));
+    expect(diagnosticText).not.toContain(input.prompt);
+    expect(diagnosticText).not.toContain(GEMINI_KEY);
   });
 
   it('falls back to OpenRouter when Gemini returns the exact source, logging the provider and model', async () => {
@@ -299,6 +325,62 @@ describe('image-edit fallback chain', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(logSpy).toHaveBeenCalledWith('[AI] gemini failed (AI_RATE_LIMITED, HTTP 429): You exceeded your current quota');
     expect(logSpy).toHaveBeenCalledWith('[AI] falling back to openrouter');
+  });
+
+  it('records native provider status, code, and message before mapping an HTTP 200 error to a generic app code', async () => {
+    const fetchMock = scriptedFetch({
+      openrouter: () => new Response(JSON.stringify({
+        error: { code: 'invalid_model', message: `Model access denied for ${OPENROUTER_KEY}` },
+      }), { status: 200, headers: { 'content-type': 'Application/JSON; charset=utf-8' } }),
+    });
+    const result = await runImageEditTask(makeInput(), {
+      OPENROUTER_API_KEY: OPENROUTER_KEY,
+      AI_PROVIDER_ORDER: 'openrouter',
+    }, { fetchImpl: fetchMock });
+
+    expect(result).toMatchObject({ status: 'ERROR', errorCode: 'AI_REQUEST_REJECTED' });
+    const response = diagnosticRecords().find((record) => record.stage === 'provider-response');
+    const error = diagnosticRecords().find((record) => record.stage === 'error');
+    expect(response).toMatchObject({
+      provider: 'openrouter',
+      providerReached: true,
+      httpStatus: 200,
+      responseContentType: 'application/json',
+    });
+    expect(error).toMatchObject({
+      provider: 'openrouter',
+      providerReached: true,
+      httpStatus: 200,
+      responseContentType: 'application/json',
+      errorCode: 'AI_REQUEST_REJECTED',
+      providerErrorCode: 'invalid_model',
+      errorMessage: 'Model access denied for [redacted]',
+    });
+    expect(JSON.stringify(diagnosticRecords())).not.toContain(OPENROUTER_KEY);
+  });
+
+  it('records an unconfigured pinned adapter as a failure before any provider request', async () => {
+    const fetchMock = scriptedFetch({});
+    const result = await runImageEditTask(makeInput(), { AI_PROVIDER: 'gemini' }, { fetchImpl: fetchMock });
+
+    expect(result).toMatchObject({ status: 'ERROR', errorCode: 'AI_NOT_CONFIGURED' });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(diagnosticRecords()).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        stage: 'pre-provider',
+        provider: 'gemini',
+        providerReached: false,
+        validatedImageDataReturned: false,
+      }),
+      expect.objectContaining({
+        stage: 'error',
+        provider: 'gemini',
+        providerReached: false,
+        errorCode: 'AI_NOT_CONFIGURED',
+        validatedImageDataReturned: false,
+      }),
+    ]));
+    expect(diagnosticRecords().some((record) => record.stage === 'provider-request')).toBe(false);
   });
 
   it('falls back when the first provider is temporarily unavailable', async () => {

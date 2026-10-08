@@ -3,6 +3,7 @@ import { MAX_STOREFRONT_IMAGE_BYTES, ACCEPTED_IMAGE_TYPES } from '../../src/serv
 import { MAX_AI_IMAGE_SIDE } from '../../src/services/ai/contracts.js';
 import { buildStorefrontEditPrompt, SIGNCRAFT_PROMPT_VERSION } from '../../src/services/ai/promptBuilder.js';
 import { runImageEditTask } from '../ai/router.js';
+import { logAIDiagnostic } from '../ai/diagnostics.js';
 import type { AIEnvironment, ServerAIResult, ServerImageEditInput } from '../ai/types.js';
 import { hasValidImageSignature } from './imageValidation.js';
 import { readImageDimensions } from './imageDimensions.js';
@@ -22,6 +23,25 @@ function json(body: unknown, status: number): Response {
     status,
     headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
   });
+}
+
+function preProviderErrorResponse(
+  environment: AIEnvironment,
+  body: unknown,
+  status: number,
+  errorCode: string,
+  errorMessage: string,
+): Response {
+  logAIDiagnostic({
+    stage: 'error',
+    provider: 'none',
+    providerReached: false,
+    httpStatus: status,
+    errorCode,
+    errorMessage,
+    validatedImageDataReturned: false,
+  }, environment);
+  return json(body, status);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -109,43 +129,123 @@ function parseConfiguration(value: FormDataEntryValue | null): SignConfiguration
 }
 
 export async function handleAiGeneration(request: Request, environment: AIEnvironment = {}): Promise<Response> {
-  if (request.method !== 'POST') return json({ status: 'UNAVAILABLE', message: 'Use POST for image-edit requests.' }, 405);
+  logAIDiagnostic({
+    stage: 'pre-provider',
+    provider: 'none',
+    providerReached: false,
+    validatedImageDataReturned: false,
+  }, environment);
+  if (request.method !== 'POST') {
+    return preProviderErrorResponse(
+      environment,
+      { status: 'UNAVAILABLE', message: 'Use POST for image-edit requests.' },
+      405,
+      'METHOD_NOT_ALLOWED',
+      'Use POST for image-edit requests.',
+    );
+  }
   const declaredLength = Number(request.headers.get('content-length') ?? 0);
   if (Number.isFinite(declaredLength) && declaredLength > MAX_AI_REQUEST_BODY_BYTES) {
-    return json({ status: 'ERROR', code: 'IMAGE_SIZE', message: 'The image-edit request is too large.' }, 413);
+    return preProviderErrorResponse(
+      environment,
+      { status: 'ERROR', code: 'IMAGE_SIZE', message: 'The image-edit request is too large.' },
+      413,
+      'IMAGE_SIZE',
+      'The image-edit request is too large.',
+    );
   }
   const contentType = request.headers.get('content-type') ?? '';
   if (!contentType.toLowerCase().includes('multipart/form-data')) {
-    return json({ status: 'UNAVAILABLE', code: 'INVALID_CONTENT_TYPE', message: 'Send the storefront image as multipart form data.' }, 415);
+    return preProviderErrorResponse(
+      environment,
+      { status: 'UNAVAILABLE', code: 'INVALID_CONTENT_TYPE', message: 'Send the storefront image as multipart form data.' },
+      415,
+      'INVALID_CONTENT_TYPE',
+      'Send the storefront image as multipart form data.',
+    );
   }
 
   let form: FormData;
   try {
     form = await request.formData();
   } catch {
-    return json({ status: 'UNAVAILABLE', code: 'INVALID_FORM', message: 'The image-edit request could not be read.' }, 400);
+    return preProviderErrorResponse(
+      environment,
+      { status: 'UNAVAILABLE', code: 'INVALID_FORM', message: 'The image-edit request could not be read.' },
+      400,
+      'INVALID_FORM',
+      'The image-edit request could not be read.',
+    );
   }
 
   const image = form.get('storefrontImage');
-  if (!(image instanceof File)) return json({ status: 'UNAVAILABLE', code: 'IMAGE_REQUIRED', message: 'A storefront image is required.' }, 400);
+  if (!(image instanceof File)) {
+    return preProviderErrorResponse(
+      environment,
+      { status: 'UNAVAILABLE', code: 'IMAGE_REQUIRED', message: 'A storefront image is required.' },
+      400,
+      'IMAGE_REQUIRED',
+      'A storefront image is required.',
+    );
+  }
   if (!ACCEPTED_IMAGE_TYPES.includes(image.type as (typeof ACCEPTED_IMAGE_TYPES)[number])) {
-    return json({ status: 'UNAVAILABLE', code: 'UNSUPPORTED_IMAGE', message: 'Use a JPEG, PNG or WebP storefront photo.' }, 415);
+    return preProviderErrorResponse(
+      environment,
+      { status: 'UNAVAILABLE', code: 'UNSUPPORTED_IMAGE', message: 'Use a JPEG, PNG or WebP storefront photo.' },
+      415,
+      'UNSUPPORTED_IMAGE',
+      'Use a JPEG, PNG or WebP storefront photo.',
+    );
   }
   if (image.size < 1 || image.size > MAX_STOREFRONT_IMAGE_BYTES) {
-    return json({ status: 'UNAVAILABLE', code: 'IMAGE_SIZE', message: 'The image must be between 1 byte and 10 MB.' }, 413);
+    return preProviderErrorResponse(
+      environment,
+      { status: 'UNAVAILABLE', code: 'IMAGE_SIZE', message: 'The image must be between 1 byte and 10 MB.' },
+      413,
+      'IMAGE_SIZE',
+      'The image must be between 1 byte and 10 MB.',
+    );
   }
 
   const configuration = parseConfiguration(form.get('configuration'));
-  if (!configuration) return json({ status: 'UNAVAILABLE', code: 'INVALID_CONFIGURATION', message: 'The sign configuration is invalid.' }, 400);
+  if (!configuration) {
+    return preProviderErrorResponse(
+      environment,
+      { status: 'UNAVAILABLE', code: 'INVALID_CONFIGURATION', message: 'The sign configuration is invalid.' },
+      400,
+      'INVALID_CONFIGURATION',
+      'The sign configuration is invalid.',
+    );
+  }
 
   const imageBytes = new Uint8Array(await image.arrayBuffer());
   if (!hasValidImageSignature(image.type, imageBytes.subarray(0, 12))) {
-    return json({ status: 'ERROR', code: 'INVALID_IMAGE_CONTENT', message: 'The file content does not match its declared image format.' }, 415);
+    return preProviderErrorResponse(
+      environment,
+      { status: 'ERROR', code: 'INVALID_IMAGE_CONTENT', message: 'The file content does not match its declared image format.' },
+      415,
+      'INVALID_IMAGE_CONTENT',
+      'The file content does not match its declared image format.',
+    );
   }
   const dimensions = readImageDimensions(image.type, imageBytes);
-  if (!dimensions) return json({ status: 'ERROR', code: 'INVALID_IMAGE_DIMENSIONS', message: 'The image dimensions could not be validated.' }, 415);
+  if (!dimensions) {
+    return preProviderErrorResponse(
+      environment,
+      { status: 'ERROR', code: 'INVALID_IMAGE_DIMENSIONS', message: 'The image dimensions could not be validated.' },
+      415,
+      'INVALID_IMAGE_DIMENSIONS',
+      'The image dimensions could not be validated.',
+    );
+  }
   if (dimensions.width > MAX_AI_IMAGE_SIDE || dimensions.height > MAX_AI_IMAGE_SIDE) {
-    return json({ status: 'ERROR', code: 'IMAGE_DIMENSIONS', message: 'Resize the image to 511 by 511 pixels or smaller before submitting.' }, 413);
+    return preProviderErrorResponse(
+      environment,
+      { status: 'ERROR', code: 'IMAGE_DIMENSIONS', message: 'Resize the image to 511 by 511 pixels or smaller before submitting.' },
+      413,
+      'IMAGE_DIMENSIONS',
+      'Resize the image to 511 by 511 pixels or smaller before submitting.',
+    );
   }
 
   const input: ServerImageEditInput = {
@@ -160,6 +260,15 @@ export async function handleAiGeneration(request: Request, environment: AIEnviro
   try {
     result = await runImageEditTask(input, environment);
   } catch {
+    logAIDiagnostic({
+      stage: 'error',
+      provider: 'unknown',
+      providerReached: null,
+      httpStatus: 503,
+      errorCode: 'AI_PROVIDER_UNAVAILABLE',
+      errorMessage: 'The secure image service could not complete the request. Please retry.',
+      validatedImageDataReturned: false,
+    }, environment);
     return json({
       status: 'ERROR',
       providerId: 'server-ai',
@@ -169,6 +278,7 @@ export async function handleAiGeneration(request: Request, environment: AIEnviro
   }
   if (result.status !== 'GENERATED') {
     const { errorCode, ...publicResult } = result;
+    delete publicResult.providerErrorCode;
     return json({ ...publicResult, code: errorCode }, providerFailureStatus(result));
   }
   return json({ ...result, promptVersion: SIGNCRAFT_PROMPT_VERSION }, 200);

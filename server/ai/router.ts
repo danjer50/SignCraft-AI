@@ -7,6 +7,7 @@ import {
   readDuration,
 } from './http.js';
 import { AI_PROVIDER_ENTRIES, DEFAULT_PROVIDER_ORDER, findProviderEntry } from './providerFactory.js';
+import { logAIDiagnostic, normalizeResponseContentType, sanitizeAIDiagnosticText } from './diagnostics.js';
 import type { AIProviderEntry } from './providerFactory.js';
 import type {
   AIEnvironment,
@@ -51,6 +52,7 @@ interface AttemptFailure {
   readonly errorCode: AIErrorCode;
   readonly message: string;
   readonly providerHttpStatus?: number;
+  readonly providerErrorCode?: string;
   readonly providerErrorMessage?: string;
 }
 
@@ -61,6 +63,7 @@ type AttemptOutcome<T> =
       errorCode: AIErrorCode;
       message: string;
       providerHttpStatus?: number;
+      providerErrorCode?: string;
       providerErrorMessage?: string;
     };
 
@@ -249,8 +252,59 @@ async function runChain<T>(
       log(`skipping provider: ${step.entry.id} (request budget exhausted)`);
       break;
     }
-    const providerOptions: AIProviderOptions = { fetchImpl, timeoutMs: Math.min(providerTimeoutMs, remaining) };
-    log(`trying provider: ${step.entry.id} (task=${task}, model=${step.entry.model(environment)})`);
+    const provider = step.entry.id;
+    const model = step.entry.model(environment);
+    let providerReached: boolean | null = false;
+    let httpStatus: number | null = null;
+    let responseContentType: string | null = null;
+    const diagnosticFetch: typeof fetch = async (request, init) => {
+      if (task === 'image-edit') {
+        logAIDiagnostic({
+          stage: 'provider-request',
+          provider,
+          model,
+          providerReached: null,
+          validatedImageDataReturned: false,
+        }, environment);
+      }
+      let response: Response;
+      try {
+        response = await fetchImpl(request, init);
+      } catch (error) {
+        providerReached = null;
+        throw error;
+      }
+      providerReached = true;
+      httpStatus = response.status;
+      responseContentType = normalizeResponseContentType(response.headers.get('content-type'));
+      if (task === 'image-edit') {
+        logAIDiagnostic({
+          stage: 'provider-response',
+          provider,
+          model,
+          providerReached,
+          httpStatus,
+          responseContentType,
+          validatedImageDataReturned: false,
+        }, environment);
+      }
+      return response;
+    };
+    const providerOptions: AIProviderOptions = {
+      fetchImpl: diagnosticFetch,
+      timeoutMs: Math.min(providerTimeoutMs, remaining),
+    };
+    if (task === 'image-edit') {
+      logAIDiagnostic({
+        stage: 'pre-provider',
+        provider,
+        model,
+        providerReached: false,
+        validatedImageDataReturned: false,
+      }, environment);
+    }
+    const safeModel = sanitizeAIDiagnosticText(model, environment) ?? 'unknown';
+    log(`trying provider: ${provider} (task=${task}, model=${safeModel})`);
 
     let outcome: AttemptOutcome<T>;
     try {
@@ -264,19 +318,47 @@ async function runChain<T>(
     }
 
     if (outcome.ok) {
+      if (task === 'image-edit') {
+        logAIDiagnostic({
+          stage: 'success',
+          provider,
+          model,
+          providerReached,
+          httpStatus,
+          responseContentType,
+          validatedImageDataReturned: true,
+        }, environment);
+      }
       log(`${step.entry.id} succeeded`);
       return { value: outcome.value, failures };
+    }
+    const validatedImageDataReturned = task === 'image-edit' && outcome.errorCode === 'AI_UNCHANGED_IMAGE';
+    if (task === 'image-edit') {
+      logAIDiagnostic({
+        stage: 'error',
+        provider,
+        model,
+        providerReached,
+        httpStatus,
+        responseContentType,
+        errorCode: outcome.errorCode,
+        providerErrorCode: outcome.providerErrorCode,
+        errorMessage: outcome.providerErrorMessage ?? outcome.message,
+        validatedImageDataReturned,
+      }, environment);
     }
     failures.push({
       providerId: step.entry.id,
       errorCode: outcome.errorCode,
       message: outcome.message,
       ...(outcome.providerHttpStatus ? { providerHttpStatus: outcome.providerHttpStatus } : {}),
+      ...(outcome.providerErrorCode ? { providerErrorCode: outcome.providerErrorCode } : {}),
       ...(outcome.providerErrorMessage ? { providerErrorMessage: outcome.providerErrorMessage } : {}),
     });
-    const httpStatus = outcome.providerHttpStatus ? `, HTTP ${outcome.providerHttpStatus}` : '';
-    const safeDetail = outcome.providerErrorMessage ? `: ${outcome.providerErrorMessage}` : '';
-    log(`${step.entry.id} failed (${outcome.errorCode}${httpStatus})${safeDetail}`);
+    const failureHttpStatus = outcome.providerHttpStatus ? `, HTTP ${outcome.providerHttpStatus}` : '';
+    const safeProviderDetail = sanitizeAIDiagnosticText(outcome.providerErrorMessage, environment);
+    const safeDetail = safeProviderDetail ? `: ${safeProviderDetail}` : '';
+    log(`${step.entry.id} failed (${outcome.errorCode}${failureHttpStatus})${safeDetail}`);
     const next = chain.attempts[index + 1];
     if (next) log(`falling back to ${next.entry.id}`);
   }
@@ -336,12 +418,32 @@ export async function runImageEditTask(
           errorCode: result.errorCode,
           message: result.message,
           ...(result.providerHttpStatus ? { providerHttpStatus: result.providerHttpStatus } : {}),
+          ...(result.providerErrorCode ? { providerErrorCode: result.providerErrorCode } : {}),
           ...(result.providerErrorMessage ? { providerErrorMessage: result.providerErrorMessage } : {}),
         };
   });
 
   if (value) return value;
-  if (failures.length === 0) return nothingAttemptedResult(chain, environment, input);
+  if (failures.length === 0) {
+    logAIDiagnostic({
+      stage: 'pre-provider',
+      provider: 'none',
+      providerReached: false,
+      validatedImageDataReturned: false,
+    }, environment);
+    const result = await nothingAttemptedResult(chain, environment, input);
+    if (result.status !== 'GENERATED') {
+      logAIDiagnostic({
+        stage: 'error',
+        provider: 'none',
+        providerReached: false,
+        errorCode: result.errorCode,
+        errorMessage: result.message,
+        validatedImageDataReturned: false,
+      }, environment);
+    }
+    return result;
+  }
   if (failures.length === 1) {
     // A single failed provider keeps its own message and upstream diagnostics.
     return {
@@ -350,11 +452,13 @@ export async function runImageEditTask(
       errorCode: failures[0].errorCode,
       message: failures[0].message,
       ...(failures[0].providerHttpStatus ? { providerHttpStatus: failures[0].providerHttpStatus } : {}),
+      ...(failures[0].providerErrorCode ? { providerErrorCode: failures[0].providerErrorCode } : {}),
       ...(failures[0].providerErrorMessage ? { providerErrorMessage: failures[0].providerErrorMessage } : {}),
     };
   }
   const errorCode = pickFinalErrorCode(failures, 'AI_PROVIDER_UNAVAILABLE');
-  log(`all providers failed: ${summarizeFailures(failures)}`);
+  const safeFailureSummary = sanitizeAIDiagnosticText(summarizeFailures(failures), environment);
+  log(`all providers failed: ${safeFailureSummary ?? 'provider errors were not available'}`);
   return {
     status: 'ERROR',
     providerId: 'ai-router',
@@ -403,7 +507,8 @@ export async function runTextGeneration(
     return { status: 'ERROR', providerId: failures[0].providerId, errorCode: failures[0].errorCode, message: failures[0].message };
   }
   const errorCode = pickFinalErrorCode(failures, 'AI_PROVIDER_UNAVAILABLE');
-  log(`all providers failed: ${summarizeFailures(failures)}`);
+  const safeFailureSummary = sanitizeAIDiagnosticText(summarizeFailures(failures), environment);
+  log(`all providers failed: ${safeFailureSummary ?? 'provider errors were not available'}`);
   return {
     status: 'ERROR',
     providerId: 'ai-router',

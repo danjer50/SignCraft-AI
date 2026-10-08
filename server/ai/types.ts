@@ -4,8 +4,9 @@ import type { AIErrorCode, AIProviderFailureDiagnostic, SignConfiguration } from
  * Server-side AI environment.
  *
  * Every value here is server-only: `api/**` reads it from `process.env` and
- * `functions/**` receives it through the Cloudflare Pages `env` binding. None of it is ever
- * serialized into a response, logged or forwarded to the browser.
+ * `functions/**` receives it through the Cloudflare Pages `env` binding. Credentials are never
+ * serialized into a response, logged or forwarded to the browser. Temporary AI diagnostics may
+ * log only sanitized provider/model identifiers and response metadata.
  *
  * `AI_PROVIDER` keeps its original meaning: it pins one provider to the front of the chain.
  * The multi-provider settings below let a request continue on another provider when the pinned
@@ -74,6 +75,7 @@ export type ServerAIResult =
       message: string;
       errorCode: AIErrorCode;
       providerHttpStatus?: number;
+      providerErrorCode?: string;
       providerErrorMessage?: string;
       providerFailures?: AIProviderFailureDiagnostic[];
     };

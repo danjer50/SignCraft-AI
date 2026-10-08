@@ -1,5 +1,6 @@
 import type { AIErrorCode } from '../../../src/domain/sign.js';
 import { sanitizeProviderErrorMessage } from '../http.js';
+import { sanitizeAIDiagnosticText } from '../diagnostics.js';
 import { hasValidImageSignature } from '../../http/imageValidation.js';
 import { isUnchangedSource } from '../imageResult.js';
 import type { AIEnvironment, ServerAIImageProvider, ServerAIResult, ServerImageEditInput } from '../types.js';
@@ -13,7 +14,7 @@ const MAX_OUTPUT_BASE64_CHARS = Math.ceil(MAX_OUTPUT_IMAGE_BYTES * 4 / 3) + 8;
 type CloudflareEnvelope = {
   success?: boolean;
   result?: { image?: unknown };
-  errors?: Array<{ message?: unknown }>;
+  errors?: Array<{ message?: unknown; code?: unknown }>;
 };
 
 function errorMessage(errorCode: AIErrorCode): string {
@@ -35,7 +36,7 @@ function errorMessage(errorCode: AIErrorCode): string {
 function failure(
   errorCode: AIErrorCode,
   providerId = 'cloudflare-flux-2-klein-9b',
-  details: { providerHttpStatus?: number; providerErrorMessage?: string } = {},
+  details: { providerHttpStatus?: number; providerErrorCode?: string; providerErrorMessage?: string } = {},
 ): ServerAIResult {
   return { status: 'ERROR', providerId, errorCode, message: errorMessage(errorCode), ...details };
 }
@@ -44,6 +45,14 @@ function getProviderErrorText(body: CloudflareEnvelope): string {
   return Array.isArray(body.errors)
     ? body.errors.map((error) => typeof error?.message === 'string' ? error.message : '').join(' ').slice(0, 2_000)
     : '';
+}
+
+function getProviderErrorCode(body: CloudflareEnvelope): string | undefined {
+  if (!Array.isArray(body.errors)) return undefined;
+  const codes = body.errors
+    .map((error) => typeof error?.code === 'string' || typeof error?.code === 'number' ? String(error.code) : '')
+    .filter(Boolean);
+  return codes.length > 0 ? codes.slice(0, 3).join(', ').slice(0, 100) : undefined;
 }
 
 function mapHttpError(status: number, providerMessage: string): AIErrorCode {
@@ -130,8 +139,13 @@ export class CloudflareFluxProvider implements ServerAIImageProvider {
       const providerMessage = body ? getProviderErrorText(body) : '';
       if (!response.ok || body?.success === false) {
         const safeProviderMessage = sanitizeProviderErrorMessage(providerMessage, [accountId, token]);
+        const providerErrorCode = sanitizeAIDiagnosticText(body ? getProviderErrorCode(body) : undefined, {
+          CLOUDFLARE_ACCOUNT_ID: accountId,
+          CLOUDFLARE_API_TOKEN: token,
+        }, 100);
         return failure(mapHttpError(response.status, providerMessage), this.id, {
           providerHttpStatus: response.status,
+          ...(providerErrorCode ? { providerErrorCode } : {}),
           ...(safeProviderMessage ? { providerErrorMessage: safeProviderMessage } : {}),
         });
       }
