@@ -85,9 +85,14 @@ function outputDimensions(width: number, height: number): { width: number; heigh
 }
 
 /**
+ * Convert bytes to base64 string for API requests.
+ */
+/**
  * Cloudflare Workers AI REST adapter for FLUX.2 [klein] 9B. The account ID and
  * bearer token are read only from the server environment; the destination host
  * and model path are constants, so request data cannot become an arbitrary URL.
+ * 
+ * Enhanced to support mask-based inpainting when a mask is provided.
  */
 export class CloudflareFluxProvider implements ServerAIImageProvider {
   readonly id = 'cloudflare-flux-2-klein-9b';
@@ -111,6 +116,11 @@ export class CloudflareFluxProvider implements ServerAIImageProvider {
     const dimensions = outputDimensions(input.image.width, input.image.height);
     form.set('width', String(dimensions.width));
     form.set('height', String(dimensions.height));
+
+    // Add mask if provided for inpainting
+    if (input.mask) {
+      form.set('mask', new Blob([input.mask], { type: 'image/png' }), 'sign-mask.png');
+    }
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);

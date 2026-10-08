@@ -25,7 +25,7 @@ type PollinationsEnvelope = {
 
 function errorMessage(errorCode: AIErrorCode, model: string): string {
   switch (errorCode) {
-    case 'AI_NOT_CONFIGURED': return `The Pollinations model “${model}” is not available for this key. Check POLLINATIONS_MODEL and the key's model access.`;
+    case 'AI_NOT_CONFIGURED': return `The Pollinations model "${model}" is not available for this key. Check POLLINATIONS_MODEL and the key's model access.`;
     case 'AI_AUTHENTICATION': return 'Pollinations rejected the server API key. No concept was created.';
     case 'AI_RATE_LIMITED': return 'Pollinations is rate-limited. Please retry shortly.';
     case 'AI_CREDITS_EXHAUSTED': return 'The Pollinations account or key has no remaining balance for this request.';
@@ -47,6 +47,8 @@ function errorMessage(errorCode: AIErrorCode, model: string): string {
  * `response_format=b64_json`. The edited image comes back either as base64 on `data[0].b64_json` or,
  * if a caller asks for it, as a stored URL — this adapter only ever reads the base64 form and never
  * fetches a returned URL, so a provider response can never make the server fetch an arbitrary host.
+ *
+ * Enhanced to support mask-based inpainting when a mask is provided.
  *
  * The host is a constant and the key travels only in the `authorization` header, which is
  * server-side by design: Pollinations documents `sk_*` secret keys as backend-only credentials that
@@ -83,6 +85,11 @@ export class PollinationsImageProvider implements ServerAIImageProvider {
     form.set('prompt', input.prompt);
     form.set('model', this.model);
     form.set('response_format', 'b64_json');
+
+    // Add mask if provided for inpainting
+    if (input.mask) {
+      form.set('mask', new Blob([input.mask], { type: 'image/png' }), 'sign-mask.png');
+    }
 
     const result = await postMultipart(
       POLLINATIONS_EDITS_URL,

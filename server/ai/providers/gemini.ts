@@ -15,7 +15,7 @@ type GeminiEnvelope = {
 
 function errorMessage(errorCode: AIErrorCode, model: string): string {
   switch (errorCode) {
-    case 'AI_NOT_CONFIGURED': return `The Gemini model “${model}” is not available for this API key. Check GEMINI_MODEL and the key's model access.`;
+    case 'AI_NOT_CONFIGURED': return `The Gemini model "${model}" is not available for this API key. Check GEMINI_MODEL and the key's model access.`;
     case 'AI_AUTHENTICATION': return 'Gemini rejected the server API key. No concept was created.';
     case 'AI_RATE_LIMITED': return 'Gemini is rate-limited (free-tier quota reached). Please retry shortly.';
     case 'AI_CREDITS_EXHAUSTED': return 'The Gemini project has no remaining quota, or billing is not enabled for image output.';
@@ -38,6 +38,8 @@ function errorMessage(errorCode: AIErrorCode, model: string): string {
  *
  * The endpoint host and `:generateContent` path are constants, so request data can never become an
  * arbitrary URL. The key travels in the `x-goog-api-key` header, never in the URL or body.
+ *
+ * Enhanced to support mask-based inpainting when a mask is provided.
  */
 export class GeminiImageProvider implements ServerAIImageProvider {
   readonly id = 'gemini';
@@ -65,16 +67,28 @@ export class GeminiImageProvider implements ServerAIImageProvider {
 
     if (!this.apiKey) return failure('AI_NOT_CONFIGURED');
 
+    // Build the parts array with the source image
+    const parts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> = [
+      { text: input.prompt },
+      { inlineData: { mimeType: input.image.mimeType, data: bytesToBase64(input.image.bytes) } },
+    ];
+
+    // Add mask if provided for inpainting
+    if (input.mask) {
+      parts.push({
+        inlineData: { mimeType: 'image/png', data: bytesToBase64(input.mask) }
+      });
+      // Update prompt to reference the mask
+      parts[0].text = `${input.prompt}\n\nIMPORTANT: Use the second image (index 1) as an inpainting mask. The white areas of the mask indicate where to add the sign, and the black areas must remain unchanged.`;
+    }
+
     const result = await postJson(
       `${GEMINI_API_BASE}${encodeURIComponent(this.model)}:generateContent`,
       { 'x-goog-api-key': this.apiKey },
       {
         contents: [{
           role: 'user',
-          parts: [
-            { text: input.prompt },
-            { inline_data: { mime_type: input.image.mimeType, data: bytesToBase64(input.image.bytes) } },
-          ],
+          parts: parts,
         }],
         generationConfig: { responseModalities: ['IMAGE'] },
       },

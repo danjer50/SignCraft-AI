@@ -70,15 +70,15 @@ describe('Gemini image provider', () => {
     const result = await new GeminiImageProvider(env, { fetchImpl: fetchMock }).generate(makeInput());
     const [url, init] = fetchMock.mock.calls[0];
     const body = JSON.parse(String(init?.body)) as {
-      contents: Array<{ parts: Array<{ text?: string; inline_data?: { mime_type?: string; data?: string } }> }>;
+      contents: Array<{ parts: Array<{ text?: string; inlineData?: { mimeType?: string; data?: string } }> }>;
       generationConfig?: { responseModalities?: string[] };
     };
 
     expect(url).toBe(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_DEFAULT_MODEL}:generateContent`);
     expect(new Headers(init?.headers).get('x-goog-api-key')).toBe(apiKey);
     expect(body.contents[0].parts[0].text).toBe(makeInput().prompt);
-    expect(body.contents[0].parts[1].inline_data?.mime_type).toBe('image/jpeg');
-    expect(body.contents[0].parts[1].inline_data?.data).toBe(Buffer.from(jpegFixture()).toString('base64'));
+    expect(body.contents[0].parts[1].inlineData?.mimeType).toBe('image/jpeg');
+    expect(body.contents[0].parts[1].inlineData?.data).toBe(Buffer.from(jpegFixture()).toString('base64'));
     expect(body.generationConfig?.responseModalities).toEqual(['IMAGE']);
     expect(result.status).toBe('GENERATED');
     if (result.status === 'GENERATED') {

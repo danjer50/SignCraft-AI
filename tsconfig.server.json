@@ -23,6 +23,8 @@
     "src/domain/sign.ts",
     "src/services/upload.ts",
     "src/services/ai/contracts.ts",
-    "src/services/ai/promptBuilder.ts"
+    "src/services/ai/promptBuilder.ts",
+    "src/services/ai/designSpecification.ts",
+    "src/services/ai/maskGenerator.ts"
   ]
 }

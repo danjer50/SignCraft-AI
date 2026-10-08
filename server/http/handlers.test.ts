@@ -131,13 +131,14 @@ describe('server API safety defaults', () => {
       expect(body.status).toBe('GENERATED');
       expect(body.providerId).toBe('cloudflare-flux-2-klein-9b');
       expect(body.imageUrl).toMatch(/^data:image\/png;base64,/);
-      expect(body.promptVersion).toBe('storefront-inpaint-v6');
+      expect(body.promptVersion).toBe('storefront-inpaint-v7');
       expect(url).toBe('https://api.cloudflare.com/client/v4/accounts/0123456789abcdef0123456789abcdef/ai/run/@cf/black-forest-labs/flux-2-klein-9b');
       expect(prompt).toContain('ATELIER SABLE · حرف');
       expect(prompt).toContain('Keep the stone arch untouched.');
       expect(prompt).toContain('polished cast acrylic');
       expect(prompt).toContain('integrated LED modules');
-      expect(prompt).toContain('combine them plausibly on one sign');
+      // The new enhanced prompt uses different material descriptions
+      expect(prompt).toContain('Requested fabrication materials with physical properties');
       expect(upstreamForm.get('input_image_0')).toBeInstanceOf(Blob);
       expect(upstreamForm.get('width')).toBe('1024');
       expect(upstreamForm.get('height')).toBe('575');
@@ -169,8 +170,8 @@ describe('server API safety defaults', () => {
       const prompt = (fetchMock.mock.calls[0][1]?.body as FormData).get('prompt');
 
       expect(response.status).toBe(200);
-      expect(prompt).toContain('centered at about (32%, 18%)');
-      expect(prompt).toContain('fully removed, covered or wrapped and replaced with one confident');
+      expect(prompt).toContain('centered at approximately (32%, 18%)');
+      expect(prompt).toContain('fully covered or replaced');
     } finally {
       vi.unstubAllGlobals();
     }
@@ -214,7 +215,8 @@ describe('server API safety defaults', () => {
       expect(prompt).toContain('brushed or polished stainless steel');
       expect(prompt).toContain('aluminium composite panel');
       expect(prompt).toContain('LED neon-flex tubing');
-      expect(prompt).toContain("in the customer's priority order");
+      // The new prompt uses enhanced material descriptions
+      expect(prompt).toContain('Requested fabrication materials with physical properties');
     } finally {
       vi.unstubAllGlobals();
     }

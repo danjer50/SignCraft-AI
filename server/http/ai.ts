@@ -17,6 +17,11 @@ const MAX_AI_REQUEST_BODY_BYTES = 12 * 1024 * 1024;
  */
 const MAX_CONFIGURATION_JSON_LENGTH = 50_000;
 
+/**
+ * Maximum size for a mask image in bytes.
+ */
+const MAX_MASK_BYTES = 2 * 1024 * 1024; // 2MB
+
 function json(body: unknown, status: number): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -156,15 +161,22 @@ export async function handleAiGeneration(request: Request, environment: AIEnviro
     exactTextOverlayRequired: true,
   };
 
+  // Handle mask if provided
   const mask = form.get('mask');
   if (mask instanceof File) {
-    if (mask.type !== 'image/png' || mask.size < 1 || mask.size > MAX_STOREFRONT_IMAGE_BYTES) {
-      return json({ status: 'UNAVAILABLE', code: 'INVALID_MASK', message: 'An inpainting mask must be a PNG no larger than 10 MB.' }, 415);
+    if (mask.type !== 'image/png' || mask.size < 1 || mask.size > MAX_MASK_BYTES) {
+      return json({ status: 'UNAVAILABLE', code: 'INVALID_MASK', message: 'An inpainting mask must be a PNG no larger than 2 MB.' }, 415);
     }
     const maskBytes = new Uint8Array(await mask.arrayBuffer());
     if (!hasValidImageSignature(mask.type, maskBytes.subarray(0, 12))) {
       return json({ status: 'UNAVAILABLE', code: 'INVALID_MASK', message: 'The inpainting mask is not a valid PNG.' }, 415);
     }
+    // Validate mask dimensions match the source image dimensions
+    const maskDimensions = readImageDimensions(mask.type, maskBytes);
+    if (!maskDimensions) {
+      return json({ status: 'UNAVAILABLE', code: 'INVALID_MASK', message: 'The mask dimensions could not be validated.' }, 415);
+    }
+    // Note: We allow the mask to be any size as the AI provider will handle resizing if needed
     input.mask = maskBytes;
   }
 

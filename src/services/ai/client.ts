@@ -6,6 +6,7 @@ import type { ImageEditingRequest } from './contracts';
 import { buildStorefrontEditPrompt, SIGNCRAFT_PROMPT_VERSION } from './promptBuilder';
 import { prepareCloudflareReferenceImage } from './imagePreparation';
 import { isOverEditedRender, isUnchangedRender } from './renderComparison';
+import { generateMaskFromSignArea, isMaskGenerationSupported } from './maskGenerator';
 
 function normalizedConfiguration(configuration: SignConfiguration): SignConfiguration {
   return {
@@ -38,16 +39,46 @@ function errorResult(
  */
 export const AI_REQUEST_TIMEOUT_MS = 120_000;
 
+/**
+ * Generate a mask from the user's brush strokes if available and supported.
+ * Returns a promise that resolves to the mask blob or null if not available.
+ */
+async function generateMaskForRequest(configuration: SignConfiguration): Promise<Blob | null> {
+  // Only generate mask if brush data exists and the environment supports it
+  if (!configuration.signArea || !isMaskGenerationSupported()) {
+    return null;
+  }
+
+  try {
+    const mask = await generateMaskFromSignArea(configuration.signArea);
+    return mask;
+  } catch (error) {
+    console.error('Failed to generate mask for AI request:', error);
+    // Continue without mask - the textual placement description will still be used
+    return null;
+  }
+}
+
 export async function generateStorefrontConcept(
   request: Omit<ImageEditingRequest, 'prompt' | 'preserveSourceArchitecture' | 'exactTextOverlayRequired'>,
 ): Promise<AIConceptResult> {
   const configuration = normalizedConfiguration(request.configuration);
+  
+  // Generate mask from brush data if available
+  let mask: Blob | null = null;
+  try {
+    mask = await generateMaskForRequest(configuration);
+  } catch {
+    // Non-fatal: continue without mask
+  }
+
   const fullRequest: ImageEditingRequest = {
     ...request,
     configuration,
     prompt: buildStorefrontEditPrompt(configuration),
     preserveSourceArchitecture: true,
     exactTextOverlayRequired: true,
+    mask: mask || undefined,
   };
 
   if (clientConfig.aiMode === 'demo') return new DemoAIProvider().generate(fullRequest);
