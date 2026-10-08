@@ -8,6 +8,7 @@ import {
 } from './http.js';
 import { AI_PROVIDER_ENTRIES, DEFAULT_PROVIDER_ORDER, findProviderEntry } from './providerFactory.js';
 import { logAIDiagnostic, normalizeResponseContentType, sanitizeAIDiagnosticText } from './diagnostics.js';
+import type { AIRequestDiagnosticContext, AIDiagnosticProviderAttempt } from './diagnostics.js';
 import type { AIProviderEntry } from './providerFactory.js';
 import type {
   AIEnvironment,
@@ -45,10 +46,13 @@ export interface AIChainOptions {
   fetchImpl?: typeof fetch;
   providerTimeoutMs?: number;
   totalTimeoutMs?: number;
+  /** Request-scoped safe diagnostics; this never changes provider selection or request payloads. */
+  diagnosticContext?: AIRequestDiagnosticContext;
 }
 
 interface AttemptFailure {
   readonly providerId: string;
+  readonly model: string;
   readonly errorCode: AIErrorCode;
   readonly message: string;
   readonly providerHttpStatus?: number;
@@ -71,8 +75,8 @@ type AttemptOutcome<T> =
  * Server logs only ever carry the provider id, its model and a failure category. Prompts, photos,
  * API keys and provider response bodies are never logged.
  */
-function log(message: string): void {
-  console.info(`[AI] ${message}`);
+function log(message: string, requestId?: string): void {
+  console.info(`[AI]${requestId ? ` [${requestId}]` : ''} ${message}`);
 }
 
 function parseProviderOrder(value: string | undefined): string[] | null {
@@ -156,10 +160,10 @@ export function resolveProviderChain(task: AITask, environment: AIEnvironment = 
   };
 }
 
-function describeChain(task: AITask, chain: ResolvedChain): void {
+function describeChain(task: AITask, chain: ResolvedChain, requestId?: string): void {
   const skipped = chain.skipped.map((entry) => `${entry.id} (${entry.reason})`);
   log(`task=${task} chain=[${chain.attempts.map((step) => step.entry.id).join(', ')}]`
-    + (skipped.length > 0 ? ` skipped=[${skipped.join(', ')}]` : ''));
+    + (skipped.length > 0 ? ` skipped=[${skipped.join(', ')}]` : ''), requestId);
 }
 
 /** Short, non-secret failure category used in aggregated error messages. */
@@ -234,7 +238,11 @@ async function runChain<T>(
   chain: ResolvedChain,
   environment: AIEnvironment,
   options: AIChainOptions,
-  attempt: (entry: AIProviderEntry, providerOptions: AIProviderOptions) => Promise<AttemptOutcome<T>>,
+  attempt: (
+    entry: AIProviderEntry,
+    providerOptions: AIProviderOptions,
+    diagnosticAttempt: AIDiagnosticProviderAttempt,
+  ) => Promise<AttemptOutcome<T>>,
 ): Promise<{ value?: T; failures: AttemptFailure[] }> {
   const fetchImpl = options.fetchImpl ?? globalThis.fetch;
   const providerTimeoutMs = options.providerTimeoutMs
@@ -243,27 +251,49 @@ async function runChain<T>(
     ?? readDuration(environment.AI_TOTAL_TIMEOUT_MS, DEFAULT_TOTAL_TIMEOUT_MS, 1_000, 600_000);
   const deadline = Date.now() + totalTimeoutMs;
   const failures: AttemptFailure[] = [];
+  const diagnosticContext = options.diagnosticContext;
+  const requestId = diagnosticContext?.requestId;
+  const sensitiveValues = diagnosticContext?.sensitiveValues ?? [];
 
   for (const [index, step] of chain.attempts.entries()) {
     const remaining = deadline - Date.now();
     // The first attempt always runs: a small configured budget must not mean "no attempt at all".
     // Later providers are only started when enough of the shared budget is left to be useful.
     if (failures.length > 0 && remaining < MINIMUM_ATTEMPT_BUDGET_MS) {
-      log(`skipping provider: ${step.entry.id} (request budget exhausted)`);
+      log(`skipping provider: ${step.entry.id} (request budget exhausted)`, requestId);
       break;
     }
     const provider = step.entry.id;
     const model = step.entry.model(environment);
+    const diagnosticAttempt: AIDiagnosticProviderAttempt = {
+      providerId: provider,
+      model,
+      adapterInvoked: false,
+      requestAttempted: false,
+      responseReceived: false,
+      providerHttpStatus: null,
+    };
+    diagnosticContext?.providerAttempts.push(diagnosticAttempt);
     let providerReached: boolean | null = false;
     let httpStatus: number | null = null;
     let responseContentType: string | null = null;
     const diagnosticFetch: typeof fetch = async (request, init) => {
+      diagnosticAttempt.requestAttempted = true;
       if (task === 'image-edit') {
         logAIDiagnostic({
           stage: 'provider-request',
+          requestId,
           provider,
           model,
           providerReached: null,
+          providerAdapterInvoked: diagnosticAttempt.adapterInvoked,
+          providerRequestAttempted: true,
+          providerResponseReceived: false,
+          providerHttpStatus: null,
+          failedBeforeProviderInvocation: !diagnosticAttempt.adapterInvoked,
+          imageValidation: diagnosticContext?.imageValidation,
+          configurationValidation: diagnosticContext?.configurationValidation,
+          sensitiveValues,
           validatedImageDataReturned: false,
         }, environment);
       }
@@ -275,16 +305,26 @@ async function runChain<T>(
         throw error;
       }
       providerReached = true;
+      diagnosticAttempt.responseReceived = true;
+      diagnosticAttempt.providerHttpStatus = response.status;
       httpStatus = response.status;
       responseContentType = normalizeResponseContentType(response.headers.get('content-type'));
       if (task === 'image-edit') {
         logAIDiagnostic({
           stage: 'provider-response',
+          requestId,
           provider,
           model,
           providerReached,
-          httpStatus,
+          providerAdapterInvoked: diagnosticAttempt.adapterInvoked,
+          providerRequestAttempted: diagnosticAttempt.requestAttempted,
+          providerResponseReceived: diagnosticAttempt.responseReceived,
+          providerHttpStatus: httpStatus,
           responseContentType,
+          failedBeforeProviderInvocation: !diagnosticAttempt.adapterInvoked,
+          imageValidation: diagnosticContext?.imageValidation,
+          configurationValidation: diagnosticContext?.configurationValidation,
+          sensitiveValues,
           validatedImageDataReturned: false,
         }, environment);
       }
@@ -297,18 +337,26 @@ async function runChain<T>(
     if (task === 'image-edit') {
       logAIDiagnostic({
         stage: 'pre-provider',
+        requestId,
         provider,
         model,
         providerReached: false,
+        providerAdapterInvoked: false,
+        providerRequestAttempted: false,
+        providerResponseReceived: false,
+        failedBeforeProviderInvocation: true,
+        imageValidation: diagnosticContext?.imageValidation,
+        configurationValidation: diagnosticContext?.configurationValidation,
+        sensitiveValues,
         validatedImageDataReturned: false,
       }, environment);
     }
     const safeModel = sanitizeAIDiagnosticText(model, environment) ?? 'unknown';
-    log(`trying provider: ${provider} (task=${task}, model=${safeModel})`);
+    log(`trying provider: ${provider} (task=${task}, model=${safeModel})`, requestId);
 
     let outcome: AttemptOutcome<T>;
     try {
-      outcome = await attempt(step.entry, providerOptions);
+      outcome = await attempt(step.entry, providerOptions, diagnosticAttempt);
     } catch {
       outcome = {
         ok: false,
@@ -321,34 +369,55 @@ async function runChain<T>(
       if (task === 'image-edit') {
         logAIDiagnostic({
           stage: 'success',
+          requestId,
           provider,
           model,
           providerReached,
-          httpStatus,
+          providerAdapterInvoked: diagnosticAttempt.adapterInvoked,
+          providerRequestAttempted: diagnosticAttempt.requestAttempted,
+          providerResponseReceived: diagnosticAttempt.responseReceived,
+          providerHttpStatus: httpStatus,
           responseContentType,
+          imageValidation: diagnosticContext?.imageValidation,
+          configurationValidation: diagnosticContext?.configurationValidation,
+          sensitiveValues,
           validatedImageDataReturned: true,
         }, environment);
       }
-      log(`${step.entry.id} succeeded`);
+      log(`${step.entry.id} succeeded`, requestId);
       return { value: outcome.value, failures };
     }
+    diagnosticAttempt.errorCode = outcome.errorCode;
+    diagnosticAttempt.providerErrorCode = outcome.providerErrorCode;
+    diagnosticAttempt.providerErrorMessage = outcome.providerErrorMessage;
     const validatedImageDataReturned = task === 'image-edit' && outcome.errorCode === 'AI_UNCHANGED_IMAGE';
     if (task === 'image-edit') {
       logAIDiagnostic({
         stage: 'error',
+        requestId,
         provider,
         model,
         providerReached,
-        httpStatus,
+        providerAdapterInvoked: diagnosticAttempt.adapterInvoked,
+        providerRequestAttempted: diagnosticAttempt.requestAttempted,
+        providerResponseReceived: diagnosticAttempt.responseReceived,
+        providerHttpStatus: httpStatus,
         responseContentType,
-        errorCode: outcome.errorCode,
+        internalErrorCode: outcome.errorCode,
         providerErrorCode: outcome.providerErrorCode,
-        errorMessage: outcome.providerErrorMessage ?? outcome.message,
+        providerErrorMessage: outcome.providerErrorMessage,
+        errorMessage: outcome.message,
+        providerFailures: [diagnosticAttempt],
+        failedBeforeProviderInvocation: !diagnosticAttempt.adapterInvoked,
+        imageValidation: diagnosticContext?.imageValidation,
+        configurationValidation: diagnosticContext?.configurationValidation,
+        sensitiveValues,
         validatedImageDataReturned,
       }, environment);
     }
     failures.push({
       providerId: step.entry.id,
+      model,
       errorCode: outcome.errorCode,
       message: outcome.message,
       ...(outcome.providerHttpStatus ? { providerHttpStatus: outcome.providerHttpStatus } : {}),
@@ -356,11 +425,11 @@ async function runChain<T>(
       ...(outcome.providerErrorMessage ? { providerErrorMessage: outcome.providerErrorMessage } : {}),
     });
     const failureHttpStatus = outcome.providerHttpStatus ? `, HTTP ${outcome.providerHttpStatus}` : '';
-    const safeProviderDetail = sanitizeAIDiagnosticText(outcome.providerErrorMessage, environment);
+    const safeProviderDetail = sanitizeAIDiagnosticText(outcome.providerErrorMessage, environment, 240, sensitiveValues);
     const safeDetail = safeProviderDetail ? `: ${safeProviderDetail}` : '';
-    log(`${step.entry.id} failed (${outcome.errorCode}${failureHttpStatus})${safeDetail}`);
+    log(`${step.entry.id} failed (${outcome.errorCode}${failureHttpStatus})${safeDetail}`, requestId);
     const next = chain.attempts[index + 1];
-    if (next) log(`falling back to ${next.entry.id}`);
+    if (next) log(`falling back to ${next.entry.id}`, requestId);
   }
 
   return { failures };
@@ -399,9 +468,9 @@ export async function runImageEditTask(
   options: AIChainOptions = {},
 ): Promise<ServerAIResult> {
   const chain = resolveProviderChain('image-edit', environment);
-  describeChain('image-edit', chain);
+  describeChain('image-edit', chain, options.diagnosticContext?.requestId);
 
-  const { value, failures } = await runChain<ServerAIResult>('image-edit', chain, environment, options, async (entry, providerOptions) => {
+  const { value, failures } = await runChain<ServerAIResult>('image-edit', chain, environment, options, async (entry, providerOptions, diagnosticAttempt) => {
     const provider = entry.createImageProvider?.(environment, providerOptions);
     if (!provider) {
       return {
@@ -410,6 +479,8 @@ export async function runImageEditTask(
         message: `Provider “${entry.id}” has no image adapter installed.`,
       };
     }
+    diagnosticAttempt.adapterInvoked = true;
+    if (options.diagnosticContext) options.diagnosticContext.providerAdapterInvoked = true;
     const result = await provider.generate(input);
     return result.status === 'GENERATED'
       ? { ok: true, value: result }
@@ -425,20 +496,37 @@ export async function runImageEditTask(
 
   if (value) return value;
   if (failures.length === 0) {
+    const diagnosticContext = options.diagnosticContext;
     logAIDiagnostic({
       stage: 'pre-provider',
+      requestId: diagnosticContext?.requestId,
       provider: 'none',
       providerReached: false,
+      providerAdapterInvoked: false,
+      providerRequestAttempted: false,
+      providerResponseReceived: false,
+      failedBeforeProviderInvocation: true,
+      imageValidation: diagnosticContext?.imageValidation,
+      configurationValidation: diagnosticContext?.configurationValidation,
+      sensitiveValues: diagnosticContext?.sensitiveValues,
       validatedImageDataReturned: false,
     }, environment);
     const result = await nothingAttemptedResult(chain, environment, input);
     if (result.status !== 'GENERATED') {
       logAIDiagnostic({
         stage: 'error',
+        requestId: diagnosticContext?.requestId,
         provider: 'none',
         providerReached: false,
-        errorCode: result.errorCode,
+        providerAdapterInvoked: false,
+        providerRequestAttempted: false,
+        providerResponseReceived: false,
+        internalErrorCode: result.errorCode,
         errorMessage: result.message,
+        failedBeforeProviderInvocation: true,
+        imageValidation: diagnosticContext?.imageValidation,
+        configurationValidation: diagnosticContext?.configurationValidation,
+        sensitiveValues: diagnosticContext?.sensitiveValues,
         validatedImageDataReturned: false,
       }, environment);
     }
@@ -457,8 +545,11 @@ export async function runImageEditTask(
     };
   }
   const errorCode = pickFinalErrorCode(failures, 'AI_PROVIDER_UNAVAILABLE');
-  const safeFailureSummary = sanitizeAIDiagnosticText(summarizeFailures(failures), environment);
-  log(`all providers failed: ${safeFailureSummary ?? 'provider errors were not available'}`);
+  const diagnosticContext = options.diagnosticContext;
+  const safeFailureSummary = sanitizeAIDiagnosticText(
+    summarizeFailures(failures), environment, 240, diagnosticContext?.sensitiveValues,
+  );
+  log(`all providers failed: ${safeFailureSummary ?? 'provider errors were not available'}`, diagnosticContext?.requestId);
   return {
     status: 'ERROR',
     providerId: 'ai-router',

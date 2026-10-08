@@ -258,7 +258,7 @@ describe('image-edit fallback chain', () => {
       provider: 'gemini',
       model: 'gemini-3.1-flash-image',
       providerReached: true,
-      httpStatus: 200,
+      providerHttpStatus: 200,
       responseContentType: 'application/json',
       validatedImageDataReturned: true,
     });
@@ -344,17 +344,18 @@ describe('image-edit fallback chain', () => {
     expect(response).toMatchObject({
       provider: 'openrouter',
       providerReached: true,
-      httpStatus: 200,
+      providerHttpStatus: 200,
       responseContentType: 'application/json',
     });
     expect(error).toMatchObject({
       provider: 'openrouter',
       providerReached: true,
-      httpStatus: 200,
+      providerHttpStatus: 200,
       responseContentType: 'application/json',
-      errorCode: 'AI_REQUEST_REJECTED',
+      internalErrorCode: 'AI_REQUEST_REJECTED',
       providerErrorCode: 'invalid_model',
-      errorMessage: 'Model access denied for [redacted]',
+      providerErrorMessage: 'Model access denied for [redacted]',
+      errorMessage: 'OpenRouter rejected this request. Review the sign details and retry.',
     });
     expect(JSON.stringify(diagnosticRecords())).not.toContain(OPENROUTER_KEY);
   });
@@ -370,13 +371,20 @@ describe('image-edit fallback chain', () => {
         stage: 'pre-provider',
         provider: 'gemini',
         providerReached: false,
+        providerAdapterInvoked: false,
+        providerRequestAttempted: false,
+        failedBeforeProviderInvocation: true,
         validatedImageDataReturned: false,
       }),
       expect.objectContaining({
         stage: 'error',
         provider: 'gemini',
         providerReached: false,
-        errorCode: 'AI_NOT_CONFIGURED',
+        providerAdapterInvoked: true,
+        providerRequestAttempted: false,
+        providerResponseReceived: false,
+        internalErrorCode: 'AI_NOT_CONFIGURED',
+        failedBeforeProviderInvocation: false,
         validatedImageDataReturned: false,
       }),
     ]));

@@ -89,12 +89,70 @@ describe('multi-provider AI generation through the API handler', () => {
       expect(records.map((record) => record.stage)).toEqual(['pre-provider', 'error']);
       expect(records[1]).toMatchObject({
         provider: 'none',
+        requestId: expect.any(String),
         providerReached: false,
-        httpStatus: 415,
-        errorCode: 'INVALID_CONTENT_TYPE',
+        providerAdapterInvoked: false,
+        providerRequestAttempted: false,
+        providerResponseReceived: false,
+        appHttpStatus: 415,
+        responseCode: 'INVALID_CONTENT_TYPE',
+        internalErrorCode: 'INVALID_CONTENT_TYPE',
+        failedBeforeProviderInvocation: true,
+        imageValidation: { state: 'not-run', failureCode: null },
+        configurationValidation: { state: 'not-run', failureCode: null },
         validatedImageDataReturned: false,
       });
       expect(JSON.stringify(records)).not.toContain(requestBody);
+    } finally {
+      info.mockRestore();
+    }
+  });
+
+  it('reports image and brief validation outcomes without logging their values', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+    try {
+      const invalidImage = new File(['svg'], 'front.svg', { type: 'image/svg+xml' });
+      const imageForm = new FormData();
+      imageForm.append('storefrontImage', invalidImage, invalidImage.name);
+      imageForm.append('configuration', JSON.stringify({
+        ...DEFAULT_SIGN_CONFIGURATION,
+        businessName: 'Private Studio Name',
+      }));
+      const imageResponse = await handleAiGeneration(new Request('https://signcraft.example/api/ai/generate-sign', {
+        method: 'POST', body: imageForm,
+      }));
+      const afterImageRecords = (info.mock.calls as unknown[][])
+        .map((call) => typeof call[0] === 'string' ? call[0] : '')
+        .filter((line) => line.startsWith('[AI_DIAGNOSTIC] '))
+        .map((line) => JSON.parse(line.slice('[AI_DIAGNOSTIC] '.length)) as Record<string, unknown>);
+      const imageError = afterImageRecords.find((record) => record.stage === 'error');
+
+      expect(imageResponse.status).toBe(415);
+      expect(imageError).toMatchObject({
+        responseCode: 'UNSUPPORTED_IMAGE',
+        imageValidation: { state: 'failed', failureCode: 'UNSUPPORTED_IMAGE' },
+        configurationValidation: { state: 'not-run', failureCode: null },
+        providerRequestAttempted: false,
+        failedBeforeProviderInvocation: true,
+      });
+
+      info.mockClear();
+      const briefResponse = await handleAiGeneration(makeRequest({ businessName: 'Private Studio Name', widthCm: '0' }));
+      const briefRecords = (info.mock.calls as unknown[][])
+        .map((call) => typeof call[0] === 'string' ? call[0] : '')
+        .filter((line) => line.startsWith('[AI_DIAGNOSTIC] '))
+        .map((line) => JSON.parse(line.slice('[AI_DIAGNOSTIC] '.length)) as Record<string, unknown>);
+      const briefError = briefRecords.find((record) => record.stage === 'error');
+
+      expect(briefResponse.status).toBe(400);
+      expect(briefError).toMatchObject({
+        responseCode: 'INVALID_CONFIGURATION',
+        imageValidation: { state: 'incomplete', failureCode: null },
+        configurationValidation: { state: 'failed', failureCode: 'INVALID_CONFIGURATION' },
+        providerRequestAttempted: false,
+        failedBeforeProviderInvocation: true,
+      });
+      expect(JSON.stringify([...afterImageRecords, ...briefRecords])).not.toContain('Private Studio Name');
     } finally {
       info.mockRestore();
     }
@@ -169,17 +227,82 @@ describe('multi-provider AI generation through the API handler', () => {
       const diagnosticLines = (info.mock.calls as unknown[][])
         .map((call) => typeof call[0] === 'string' ? call[0] : '')
         .filter((line) => line.startsWith('[AI_DIAGNOSTIC] '));
-      const errorRecord = diagnosticLines
-        .map((line) => JSON.parse(line.slice('[AI_DIAGNOSTIC] '.length)) as Record<string, unknown>)
-        .find((record) => record.stage === 'error');
+      const records = diagnosticLines
+        .map((line) => JSON.parse(line.slice('[AI_DIAGNOSTIC] '.length)) as Record<string, unknown>);
+      const errorRecord = records.find((record) => record.stage === 'error');
+      const summaryRecord = records.find((record) => record.stage === 'request-summary');
 
       expect(response.status).toBe(422);
       expect(body).not.toHaveProperty('providerErrorCode');
       expect(errorRecord).toMatchObject({
         providerErrorCode: 'invalid_model',
-        errorMessage: 'The requested model is unavailable.',
-        httpStatus: 200,
+        providerErrorMessage: 'The requested model is unavailable.',
+        providerHttpStatus: 200,
         responseContentType: 'application/json',
+        internalErrorCode: 'AI_REQUEST_REJECTED',
+      });
+      expect(summaryRecord).toMatchObject({
+        stage: 'request-summary',
+        appHttpStatus: 422,
+        responseCode: 'AI_REQUEST_REJECTED',
+        internalErrorCode: 'AI_REQUEST_REJECTED',
+        provider: 'openrouter',
+        model: 'google/gemini-3.1-flash-image',
+        providerAdapterInvoked: true,
+        providerRequestAttempted: true,
+        providerResponseReceived: true,
+        providerHttpStatus: 200,
+        providerErrorCode: 'invalid_model',
+        failedBeforeProviderInvocation: false,
+        imageValidation: { state: 'passed', failureCode: null },
+        configurationValidation: { state: 'passed', failureCode: null },
+        providerFailures: [expect.objectContaining({
+          providerId: 'openrouter',
+          model: 'google/gemini-3.1-flash-image',
+          adapterInvoked: true,
+          requestAttempted: true,
+          responseReceived: true,
+          providerHttpStatus: 200,
+          internalErrorCode: 'AI_REQUEST_REJECTED',
+          providerErrorCode: 'invalid_model',
+        })],
+      });
+      expect(response.headers.get('x-ai-diagnostic-id')).toBe(summaryRecord?.requestId);
+    } finally {
+      vi.unstubAllGlobals();
+      info.mockRestore();
+    }
+  });
+
+  it('redacts brief text and contact details from correlated provider diagnostics', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+    const businessName = 'Atelier Confidentiel';
+    const exactText = 'ENSEIGNE PRIVÉE';
+    const notes = 'Contact client@example.test';
+    const providerMessage = `Input text "${businessName}" / "${exactText}"; notes ${notes}`;
+    vi.stubGlobal('fetch', scriptedFetch({
+      openrouter: failure(400, providerMessage),
+    }));
+    try {
+      const response = await handleAiGeneration(makeRequest({ businessName, exactText, notes }), {
+        OPENROUTER_API_KEY: OPENROUTER_KEY,
+        AI_PROVIDER_ORDER: 'openrouter',
+      });
+      const diagnosticLines = (info.mock.calls as unknown[][])
+        .map((call) => typeof call[0] === 'string' ? call[0] : '')
+        .filter((line) => line.startsWith('[AI_DIAGNOSTIC] '));
+      const serialized = diagnosticLines.join('\n');
+      const summary = diagnosticLines
+        .map((line) => JSON.parse(line.slice('[AI_DIAGNOSTIC] '.length)) as Record<string, unknown>)
+        .find((record) => record.stage === 'request-summary');
+
+      expect(response.status).toBe(422);
+      expect(serialized).not.toContain(businessName);
+      expect(serialized).not.toContain(exactText);
+      expect(serialized).not.toContain(notes);
+      expect(serialized).not.toContain('client@example.test');
+      expect(summary).toMatchObject({
+        providerErrorMessage: expect.stringContaining('[redacted user input]'),
       });
     } finally {
       vi.unstubAllGlobals();
