@@ -531,6 +531,7 @@ p { color: var(--muted); }
 .result-unavailable-banner .status-offline-dot { margin-top: 6px; }
 .result-unavailable-banner strong { color: var(--ink); font-size: 13px; }
 .result-unavailable-banner p { margin: 5px 0 0; font-size: 12px; line-height: 1.65; color: var(--muted); }
+.result-unavailable-banner .result-provider-error { overflow-wrap: anywhere; color: var(--ink-soft); }
 .result-retry-hint { color: var(--warm) !important; }
 .result-action-bar { position: sticky; bottom: 14px; z-index: 12; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; border: 1px solid var(--line-2); border-radius: 16px; background: var(--glass); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); padding: 12px 14px; box-shadow: var(--shadow); margin-bottom: 26px; }
 .result-bar-actions { display: flex; flex-wrap: wrap; gap: 10px; }

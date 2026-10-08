@@ -69,7 +69,9 @@ describe('Pollinations image-edit provider', () => {
 
   it('uploads the storefront photo as multipart form data to the documented edits endpoint', async () => {
     const fetchMock = vi.fn<typeof fetch>(async () => b64Response());
-    const result = await new PollinationsImageProvider(env, { fetchImpl: fetchMock }).generate(makeInput());
+    const input = makeInput();
+    input.mask = tinyPng();
+    const result = await new PollinationsImageProvider(env, { fetchImpl: fetchMock }).generate(input);
     const [url, init] = fetchMock.mock.calls[0];
     const form = init?.body as FormData;
     const image = form.get('image') as File;
@@ -82,8 +84,10 @@ describe('Pollinations image-edit provider', () => {
     expect(image.name).toBe('storefront.jpg');
     expect(image.type).toBe('image/jpeg');
     expect(new Uint8Array(await image.arrayBuffer())).toEqual(makeInput().image.bytes);
-    expect(form.get('prompt')).toBe(makeInput().prompt);
+    expect(form.get('prompt')).toBe(input.prompt);
     expect(form.get('response_format')).toBe('b64_json');
+    // No verified native mask field exists in this adapter's current request contract.
+    expect(form.has('mask')).toBe(false);
     expect(result.status).toBe('GENERATED');
     if (result.status === 'GENERATED') {
       expect(result.providerId).toBe('pollinations');
@@ -150,7 +154,13 @@ describe('Pollinations image-edit provider', () => {
       const result = await new PollinationsImageProvider(env, { fetchImpl: fetchMock }).generate(makeInput());
 
       expect(result.status).toBe('ERROR');
-      if (result.status !== 'GENERATED') expect(result.errorCode).toBe(expected);
+      if (result.status !== 'GENERATED') {
+        expect(result.errorCode).toBe(expected);
+        if (status === 400) {
+          expect(result.providerHttpStatus).toBe(400);
+          expect(result.providerErrorMessage).toBe('Invalid input');
+        }
+      }
     }
   });
 

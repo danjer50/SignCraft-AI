@@ -267,6 +267,29 @@ export function normalizeSignConfiguration(value: unknown): SignConfiguration {
 }
 
 /** Sanitize a persisted concept so an incomplete draft cannot break the result view. */
+function normalizeProviderHttpStatus(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 100 && value <= 599 ? value : undefined;
+}
+
+function normalizeProviderFailureDiagnostic(value: unknown): AIProviderFailureDiagnostic | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
+  const source = value as Record<string, unknown>;
+  const errorCode = typeof source.errorCode === 'string' && AI_ERROR_CODES.includes(source.errorCode as AIErrorCode)
+    ? source.errorCode as AIErrorCode
+    : undefined;
+  if (typeof source.providerId !== 'string' || !source.providerId || !errorCode) return null;
+  const providerHttpStatus = normalizeProviderHttpStatus(source.providerHttpStatus);
+  const providerErrorMessage = typeof source.providerErrorMessage === 'string'
+    ? source.providerErrorMessage.slice(0, 500)
+    : undefined;
+  return {
+    providerId: source.providerId.slice(0, 80),
+    errorCode,
+    ...(providerHttpStatus ? { providerHttpStatus } : {}),
+    ...(providerErrorMessage ? { providerErrorMessage } : {}),
+  };
+}
+
 export function normalizeConceptResult(value: unknown): AIConceptResult | null {
   if (typeof value !== 'object' || value === null) return null;
   const source = value as Partial<AIConceptResult> & Record<string, unknown>;
@@ -292,6 +315,13 @@ export function normalizeConceptResult(value: unknown): AIConceptResult | null {
   const errorCode = typeof source.errorCode === 'string' && AI_ERROR_CODES.includes(source.errorCode as AIErrorCode)
     ? (source.errorCode as AIErrorCode)
     : undefined;
+  const providerHttpStatus = normalizeProviderHttpStatus(source.providerHttpStatus);
+  const providerErrorMessage = typeof source.providerErrorMessage === 'string'
+    ? source.providerErrorMessage.slice(0, 500)
+    : undefined;
+  const providerFailures = Array.isArray(source.providerFailures)
+    ? source.providerFailures.slice(0, 5).map(normalizeProviderFailureDiagnostic).filter((entry): entry is AIProviderFailureDiagnostic => entry !== null)
+    : [];
   return {
     status: source.status,
     providerId,
@@ -299,6 +329,9 @@ export function normalizeConceptResult(value: unknown): AIConceptResult | null {
     createdAt,
     sourceImageTransfer: transfer,
     ...(errorCode ? { errorCode } : {}),
+    ...(providerHttpStatus ? { providerHttpStatus } : {}),
+    ...(providerErrorMessage ? { providerErrorMessage } : {}),
+    ...(providerFailures.length > 0 ? { providerFailures } : {}),
   };
 }
 
@@ -373,6 +406,15 @@ export const AI_ERROR_CODES = [
 
 export type AIErrorCode = (typeof AI_ERROR_CODES)[number];
 
+export interface AIProviderFailureDiagnostic {
+  providerId: string;
+  errorCode: AIErrorCode;
+  /** HTTP status returned by the provider, when the failure came from an HTTP response. */
+  providerHttpStatus?: number;
+  /** Short provider error text after server-side secret redaction. */
+  providerErrorMessage?: string;
+}
+
 export type AIConceptResult =
   | {
       status: 'GENERATED';
@@ -389,6 +431,9 @@ export type AIConceptResult =
       createdAt: string;
       sourceImageTransfer: 'LOCAL_ONLY' | 'SENT_TO_SERVER' | 'UNKNOWN';
       errorCode?: AIErrorCode;
+      providerHttpStatus?: number;
+      providerErrorMessage?: string;
+      providerFailures?: AIProviderFailureDiagnostic[];
     };
 
 export const DEFAULT_SIGN_CONFIGURATION: SignConfiguration = {

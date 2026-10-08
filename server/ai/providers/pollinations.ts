@@ -1,5 +1,5 @@
 import type { AIErrorCode } from '../../../src/domain/sign.js';
-import { DEFAULT_PROVIDER_TIMEOUT_MS, mapHttpStatusToErrorCode, postMultipart, readProviderMessage } from '../http.js';
+import { DEFAULT_PROVIDER_TIMEOUT_MS, mapHttpStatusToErrorCode, postMultipart, readProviderMessage, sanitizeProviderErrorMessage } from '../http.js';
 import { decodeProviderBase64Image, isUnchangedSource } from '../imageResult.js';
 import type { AIEnvironment, AIProviderOptions, ServerAIImageProvider, ServerAIResult, ServerImageEditInput } from '../types.js';
 
@@ -48,8 +48,6 @@ function errorMessage(errorCode: AIErrorCode, model: string): string {
  * if a caller asks for it, as a stored URL — this adapter only ever reads the base64 form and never
  * fetches a returned URL, so a provider response can never make the server fetch an arbitrary host.
  *
- * Enhanced to support mask-based inpainting when a mask is provided.
- *
  * The host is a constant and the key travels only in the `authorization` header, which is
  * server-side by design: Pollinations documents `sk_*` secret keys as backend-only credentials that
  * must never ship to a browser, a mobile app or a repository.
@@ -71,11 +69,15 @@ export class PollinationsImageProvider implements ServerAIImageProvider {
   }
 
   async generate(input: ServerImageEditInput): Promise<ServerAIResult> {
-    const failure = (errorCode: AIErrorCode): ServerAIResult => ({
+    const failure = (
+      errorCode: AIErrorCode,
+      details: { providerHttpStatus?: number; providerErrorMessage?: string } = {},
+    ): ServerAIResult => ({
       status: 'ERROR',
       providerId: this.id,
       errorCode,
       message: errorMessage(errorCode, this.model),
+      ...details,
     });
 
     if (!this.apiKey) return failure('AI_NOT_CONFIGURED');
@@ -86,11 +88,6 @@ export class PollinationsImageProvider implements ServerAIImageProvider {
     form.set('model', this.model);
     form.set('response_format', 'b64_json');
 
-    // Add mask if provided for inpainting
-    if (input.mask) {
-      form.set('mask', new Blob([input.mask], { type: 'image/png' }), 'sign-mask.png');
-    }
-
     const result = await postMultipart(
       POLLINATIONS_EDITS_URL,
       { authorization: `Bearer ${this.apiKey}` },
@@ -100,12 +97,15 @@ export class PollinationsImageProvider implements ServerAIImageProvider {
     );
 
     const body = result.body as PollinationsEnvelope | null;
-    if (!result.ok) {
-      const providerMessage = body?.error?.message;
-      return failure(mapHttpStatusToErrorCode(
-        result.status,
-        typeof providerMessage === 'string' ? providerMessage : readProviderMessage(result.body),
-      ));
+    if (!result.ok || (body && typeof body === 'object' && body.error)) {
+      const providerMessage = typeof body?.error?.message === 'string'
+        ? body.error.message
+        : readProviderMessage(result.body);
+      const safeProviderMessage = sanitizeProviderErrorMessage(providerMessage, [this.apiKey]);
+      return failure(mapHttpStatusToErrorCode(result.status, providerMessage), {
+        ...(result.status >= 100 ? { providerHttpStatus: result.status } : {}),
+        ...(safeProviderMessage ? { providerErrorMessage: safeProviderMessage } : {}),
+      });
     }
     if (!body || typeof body !== 'object' || !Array.isArray(body.data)) return failure('AI_INVALID_RESPONSE');
 

@@ -1,4 +1,5 @@
 import type { AIErrorCode } from '../../../src/domain/sign.js';
+import { sanitizeProviderErrorMessage } from '../http.js';
 import { hasValidImageSignature } from '../../http/imageValidation.js';
 import { isUnchangedSource } from '../imageResult.js';
 import type { AIEnvironment, ServerAIImageProvider, ServerAIResult, ServerImageEditInput } from '../types.js';
@@ -34,8 +35,9 @@ function errorMessage(errorCode: AIErrorCode): string {
 function failure(
   errorCode: AIErrorCode,
   providerId = 'cloudflare-flux-2-klein-9b',
+  details: { providerHttpStatus?: number; providerErrorMessage?: string } = {},
 ): ServerAIResult {
-  return { status: 'ERROR', providerId, errorCode, message: errorMessage(errorCode) };
+  return { status: 'ERROR', providerId, errorCode, message: errorMessage(errorCode), ...details };
 }
 
 function getProviderErrorText(body: CloudflareEnvelope): string {
@@ -44,13 +46,13 @@ function getProviderErrorText(body: CloudflareEnvelope): string {
     : '';
 }
 
-function mapHttpError(status: number, providerMessage: string): ServerAIResult {
-  if (/credit|billing|payment|insufficient balance|out of funds/i.test(providerMessage)) return failure('AI_CREDITS_EXHAUSTED');
-  if (status === 401 || status === 403) return failure('AI_AUTHENTICATION');
-  if (status === 429) return failure('AI_RATE_LIMITED');
-  if (status === 408 || status === 504) return failure('AI_TIMEOUT');
-  if (status >= 500) return failure('AI_PROVIDER_UNAVAILABLE');
-  return failure('AI_REQUEST_REJECTED');
+function mapHttpError(status: number, providerMessage: string): AIErrorCode {
+  if (/credit|billing|payment|insufficient balance|out of funds/i.test(providerMessage)) return 'AI_CREDITS_EXHAUSTED';
+  if (status === 401 || status === 403) return 'AI_AUTHENTICATION';
+  if (status === 429) return 'AI_RATE_LIMITED';
+  if (status === 408 || status === 504) return 'AI_TIMEOUT';
+  if (status >= 500) return 'AI_PROVIDER_UNAVAILABLE';
+  return 'AI_REQUEST_REJECTED';
 }
 
 function decodeImage(base64: string): { bytes: Uint8Array; mimeType: string; base64: string } | null {
@@ -85,14 +87,9 @@ function outputDimensions(width: number, height: number): { width: number; heigh
 }
 
 /**
- * Convert bytes to base64 string for API requests.
- */
-/**
  * Cloudflare Workers AI REST adapter for FLUX.2 [klein] 9B. The account ID and
  * bearer token are read only from the server environment; the destination host
  * and model path are constants, so request data cannot become an arbitrary URL.
- * 
- * Enhanced to support mask-based inpainting when a mask is provided.
  */
 export class CloudflareFluxProvider implements ServerAIImageProvider {
   readonly id = 'cloudflare-flux-2-klein-9b';
@@ -117,11 +114,6 @@ export class CloudflareFluxProvider implements ServerAIImageProvider {
     form.set('width', String(dimensions.width));
     form.set('height', String(dimensions.height));
 
-    // Add mask if provided for inpainting
-    if (input.mask) {
-      form.set('mask', new Blob([input.mask], { type: 'image/png' }), 'sign-mask.png');
-    }
-
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
     try {
@@ -135,9 +127,15 @@ export class CloudflareFluxProvider implements ServerAIImageProvider {
         },
       );
       const body = await response.json().catch(() => null) as CloudflareEnvelope | null;
-      if (!response.ok) return mapHttpError(response.status, body ? getProviderErrorText(body) : '');
+      const providerMessage = body ? getProviderErrorText(body) : '';
+      if (!response.ok || body?.success === false) {
+        const safeProviderMessage = sanitizeProviderErrorMessage(providerMessage, [accountId, token]);
+        return failure(mapHttpError(response.status, providerMessage), this.id, {
+          providerHttpStatus: response.status,
+          ...(safeProviderMessage ? { providerErrorMessage: safeProviderMessage } : {}),
+        });
+      }
       if (!body) return failure('AI_INVALID_RESPONSE', this.id);
-      if (body.success === false) return mapHttpError(response.status, getProviderErrorText(body));
       const base64Image = body.result?.image;
       if (typeof base64Image !== 'string') return failure('AI_INVALID_RESPONSE', this.id);
       const decoded = decodeImage(base64Image);

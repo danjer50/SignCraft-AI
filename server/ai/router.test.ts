@@ -297,7 +297,7 @@ describe('image-edit fallback chain', () => {
     expect(result.status).toBe('GENERATED');
     if (result.status === 'GENERATED') expect(result.providerId).toBe('openrouter');
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(logSpy).toHaveBeenCalledWith('[AI] gemini failed (AI_RATE_LIMITED)');
+    expect(logSpy).toHaveBeenCalledWith('[AI] gemini failed (AI_RATE_LIMITED, HTTP 429): You exceeded your current quota');
     expect(logSpy).toHaveBeenCalledWith('[AI] falling back to openrouter');
   });
 
@@ -332,7 +332,7 @@ describe('image-edit fallback chain', () => {
     const result = await runImageEditTask(makeInput(), allThree, { fetchImpl: fetchMock });
 
     expect(result.status).toBe('GENERATED');
-    expect(logSpy).toHaveBeenCalledWith('[AI] gemini failed (AI_AUTHENTICATION)');
+    expect(logSpy).toHaveBeenCalledWith('[AI] gemini failed (AI_AUTHENTICATION, HTTP 403): API key not valid');
   });
 
   it('keeps the pinned provider first and falls back to Gemini when Cloudflare fails', async () => {
@@ -508,7 +508,7 @@ describe('Pollinations as a fallback image provider', () => {
     expect(String(fetchMock.mock.calls[0][0])).toBe('https://gen.pollinations.ai/v1/images/edits');
     expect(String(fetchMock.mock.calls[1][0])).toContain('generativelanguage.googleapis.com');
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(logSpy).toHaveBeenCalledWith('[AI] pollinations failed (AI_RATE_LIMITED)');
+    expect(logSpy).toHaveBeenCalledWith('[AI] pollinations failed (AI_RATE_LIMITED, HTTP 429): Too many requests');
     expect(logSpy).toHaveBeenCalledWith('[AI] falling back to gemini');
   });
 

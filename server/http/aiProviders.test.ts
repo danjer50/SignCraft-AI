@@ -190,7 +190,14 @@ describe('multi-provider AI generation through the API handler', () => {
         GEMINI_API_KEY: GEMINI_KEY,
         OPENROUTER_API_KEY: OPENROUTER_KEY,
       });
-      const body = await response.json() as { status: string; code: string; providerId: string; message: string; imageUrl?: string };
+      const body = await response.json() as {
+        status: string;
+        code: string;
+        providerId: string;
+        message: string;
+        imageUrl?: string;
+        providerFailures?: Array<{ providerId: string; providerHttpStatus?: number; providerErrorMessage?: string }>;
+      };
       const serialized = JSON.stringify(body);
 
       expect(response.status).toBe(429);
@@ -198,6 +205,10 @@ describe('multi-provider AI generation through the API handler', () => {
       expect(body.code).toBe('AI_RATE_LIMITED');
       expect(body.providerId).toBe('ai-router');
       expect(body).not.toHaveProperty('imageUrl');
+      expect(body.providerFailures).toMatchObject([
+        { providerId: 'gemini', providerHttpStatus: 429, providerErrorMessage: 'quota exceeded for [redacted]' },
+        { providerId: 'openrouter', providerHttpStatus: 402, providerErrorMessage: 'no credits on [redacted]' },
+      ]);
       for (const secret of [GEMINI_KEY, OPENROUTER_KEY, CLOUDFLARE_TOKEN]) {
         expect(serialized).not.toContain(secret);
       }

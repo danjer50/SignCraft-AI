@@ -1,4 +1,4 @@
-import type { AIErrorCode, SignConfiguration } from '../../src/domain/sign.js';
+import type { AIErrorCode, AIProviderFailureDiagnostic, SignConfiguration } from '../../src/domain/sign.js';
 
 /**
  * Server-side AI environment.
@@ -68,7 +68,15 @@ export interface ServerImageEditInput {
 
 export type ServerAIResult =
   | { status: 'GENERATED'; providerId: string; imageUrl: string; createdAt: string }
-  | { status: 'UNAVAILABLE' | 'ERROR'; providerId: string; message: string; errorCode: AIErrorCode };
+  | {
+      status: 'UNAVAILABLE' | 'ERROR';
+      providerId: string;
+      message: string;
+      errorCode: AIErrorCode;
+      providerHttpStatus?: number;
+      providerErrorMessage?: string;
+      providerFailures?: AIProviderFailureDiagnostic[];
+    };
 
 /** Unchanged legacy contract: any provider that can serve the storefront image task. */
 export interface ServerAIProvider {

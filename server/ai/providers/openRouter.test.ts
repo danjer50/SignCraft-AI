@@ -44,7 +44,9 @@ describe('OpenRouter image provider', () => {
   it('sends the source photo as a base64 data URL and parses the returned image', async () => {
     const pngDataUrl = `data:image/png;base64,${Buffer.from(tinyPng()).toString('base64')}`;
     const fetchMock = vi.fn<typeof fetch>(async () => imagesResponse(pngDataUrl));
-    const result = await new OpenRouterImageProvider(env, { fetchImpl: fetchMock }).generate(makeInput());
+    const input = makeInput();
+    input.mask = tinyPng();
+    const result = await new OpenRouterImageProvider(env, { fetchImpl: fetchMock }).generate(input);
     const [url, init] = fetchMock.mock.calls[0];
     const body = JSON.parse(String(init?.body)) as {
       model: string;
@@ -57,7 +59,8 @@ describe('OpenRouter image provider', () => {
     expect(new Headers(init?.headers).get('x-title')).toBe('SignCraft AI');
     expect(body.model).toBe(OPENROUTER_DEFAULT_MODEL);
     expect(body.modalities).toEqual(['text', 'image']);
-    expect(body.messages[0].content[0].text).toBe(makeInput().prompt);
+    expect(body.messages[0].content).toHaveLength(2);
+    expect(body.messages[0].content[0].text).toBe(input.prompt);
     expect(body.messages[0].content[1].type).toBe('image_url');
     expect(body.messages[0].content[1].image_url?.url)
       .toBe(`data:image/jpeg;base64,${Buffer.from(makeInput().image.bytes).toString('base64')}`);
@@ -111,7 +114,13 @@ describe('OpenRouter image provider', () => {
       const result = await new OpenRouterImageProvider(env, { fetchImpl: fetchMock }).generate(makeInput());
 
       expect(result.status).toBe('ERROR');
-      if (result.status !== 'GENERATED') expect(result.errorCode).toBe(expected);
+      if (result.status !== 'GENERATED') {
+        expect(result.errorCode).toBe(expected);
+        if (status === 400) {
+          expect(result.providerHttpStatus).toBe(400);
+          expect(result.providerErrorMessage).toBe('Invalid request');
+        }
+      }
     }
   });
 
