@@ -24,6 +24,7 @@ const configuration = {
   businessName: 'Atelier Sable',
   exactText: 'ATELIER SABLE',
   materials: ['acrylic', 'ledModules'] as typeof DEFAULT_SIGN_CONFIGURATION.materials,
+  signArea: { strokes: [{ points: [{ xPercent: 18, yPercent: 24 }, { xPercent: 76, yPercent: 38 }] }] },
 };
 const sourceImage = new File(['facade'], 'facade.jpg', { type: 'image/jpeg' });
 
@@ -59,7 +60,11 @@ describe('AI client failure recovery in API mode', () => {
     }
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe('/api/ai/generate-sign');
-    expect((init?.body as FormData).get('configuration')).toContain('"materials":["acrylic","ledModules"]');
+    const payload = init?.body as FormData;
+    const sentConfiguration = JSON.parse(String(payload.get('configuration'))) as typeof configuration;
+    expect(sentConfiguration.materials).toEqual(['acrylic', 'ledModules']);
+    expect(sentConfiguration.signArea?.strokes[0].points[0]).toEqual({ xPercent: 18, yPercent: 24 });
+    expect(payload.has('mask')).toBe(false);
   });
 
   it('turns a visually unchanged response into an honest failure before storing GENERATED', async () => {
@@ -132,6 +137,8 @@ describe('AI client failure recovery in API mode', () => {
       code: 'AI_CREDITS_EXHAUSTED',
       providerId: 'cloudflare-flux-2-klein-9b',
       message: 'Cloudflare Workers AI cannot process this request right now.',
+      providerHttpStatus: 400,
+      providerErrorMessage: 'Unsupported field: mask',
     }, 503));
 
     const result = await generateStorefrontConcept({ sourceImage, configuration });
@@ -140,6 +147,8 @@ describe('AI client failure recovery in API mode', () => {
     if (result.status === 'ERROR') {
       expect(result.errorCode).toBe('AI_CREDITS_EXHAUSTED');
       expect(result.sourceImageTransfer).toBe('SENT_TO_SERVER');
+      expect(result.providerHttpStatus).toBe(400);
+      expect(result.providerErrorMessage).toBe('Unsupported field: mask');
     }
   });
 

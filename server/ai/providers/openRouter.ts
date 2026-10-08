@@ -1,5 +1,5 @@
 import type { AIErrorCode } from '../../../src/domain/sign.js';
-import { DEFAULT_PROVIDER_TIMEOUT_MS, mapHttpStatusToErrorCode, postJson, readProviderMessage } from '../http.js';
+import { DEFAULT_PROVIDER_TIMEOUT_MS, mapHttpStatusToErrorCode, postJson, readProviderMessage, sanitizeProviderErrorMessage } from '../http.js';
 import { bytesToBase64, decodeProviderDataUrlImage, isUnchangedSource } from '../imageResult.js';
 import type { AIEnvironment, AIProviderOptions, ServerAIImageProvider, ServerAIResult, ServerImageEditInput } from '../types.js';
 
@@ -43,8 +43,6 @@ function errorMessage(errorCode: AIErrorCode, model: string): string {
  * with `modalities: ['text', 'image']`; the source photo is attached as a base64 data URL and the
  * edited image comes back on `choices[0].message.images[0]`.
  *
- * Enhanced to support mask-based inpainting when a mask is provided.
- *
  * The base URL is a constant, so request data cannot become an arbitrary URL. The key is sent only
  * in the `authorization` header.
  */
@@ -65,30 +63,20 @@ export class OpenRouterImageProvider implements ServerAIImageProvider {
   }
 
   async generate(input: ServerImageEditInput): Promise<ServerAIResult> {
-    const failure = (errorCode: AIErrorCode): ServerAIResult => ({
+    const failure = (
+      errorCode: AIErrorCode,
+      details: { providerHttpStatus?: number; providerErrorMessage?: string } = {},
+    ): ServerAIResult => ({
       status: 'ERROR',
       providerId: this.id,
       errorCode,
       message: errorMessage(errorCode, this.model),
+      ...details,
     });
 
     if (!this.apiKey) return failure('AI_NOT_CONFIGURED');
 
     const dataUrl = `data:${input.image.mimeType};base64,${bytesToBase64(input.image.bytes)}`;
-    
-    // Build the content array
-    const content: Array<{ type: string; text?: string; image_url?: { url: string } }> = [
-      { type: 'text', text: input.prompt },
-      { type: 'image_url', image_url: { url: dataUrl } },
-    ];
-
-    // Add mask if provided for inpainting
-    if (input.mask) {
-      const maskDataUrl = `data:image/png;base64,${bytesToBase64(input.mask)}`;
-      content.push({ type: 'image_url', image_url: { url: maskDataUrl } });
-      // Update prompt to reference the mask
-      content[0].text = `${input.prompt}\n\nIMPORTANT: Use the second image (index 1) as an inpainting mask. The white areas of the mask indicate where to add the sign, and the black areas must remain unchanged.`;
-    }
 
     const result = await postJson(
       OPENROUTER_CHAT_URL,
@@ -98,7 +86,10 @@ export class OpenRouterImageProvider implements ServerAIImageProvider {
         modalities: ['text', 'image'],
         messages: [{
           role: 'user',
-          content: content,
+          content: [
+            { type: 'text', text: input.prompt },
+            { type: 'image_url', image_url: { url: dataUrl } },
+          ],
         }],
       },
       this.fetchImpl,
@@ -107,17 +98,24 @@ export class OpenRouterImageProvider implements ServerAIImageProvider {
 
     const body = result.body as OpenRouterEnvelope | null;
     if (!result.ok) {
-      const providerMessage = body?.error?.message;
-      return failure(mapHttpStatusToErrorCode(
-        result.status,
-        typeof providerMessage === 'string' ? providerMessage : readProviderMessage(result.body),
-      ));
+      const providerMessage = typeof body?.error?.message === 'string'
+        ? body.error.message
+        : readProviderMessage(result.body);
+      const safeProviderMessage = sanitizeProviderErrorMessage(providerMessage, [this.apiKey]);
+      return failure(mapHttpStatusToErrorCode(result.status, providerMessage), {
+        ...(result.status >= 100 ? { providerHttpStatus: result.status } : {}),
+        ...(safeProviderMessage ? { providerErrorMessage: safeProviderMessage } : {}),
+      });
     }
     if (!body || typeof body !== 'object') return failure('AI_INVALID_RESPONSE');
     if (body.error) {
       // OpenRouter can report a routing/quota failure inside an HTTP 200 envelope.
       const providerMessage = typeof body.error.message === 'string' ? body.error.message : '';
-      return failure(mapHttpStatusToErrorCode(200, providerMessage));
+      const safeProviderMessage = sanitizeProviderErrorMessage(providerMessage, [this.apiKey]);
+      return failure(mapHttpStatusToErrorCode(result.status, providerMessage), {
+        providerHttpStatus: result.status,
+        ...(safeProviderMessage ? { providerErrorMessage: safeProviderMessage } : {}),
+      });
     }
 
     let sawUnchangedSource = false;

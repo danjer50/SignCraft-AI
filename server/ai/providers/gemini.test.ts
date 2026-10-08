@@ -67,7 +67,9 @@ describe('Gemini image provider', () => {
 
   it('sends the source photo as inline_data with the prompt, and reads the image back', async () => {
     const fetchMock = vi.fn<typeof fetch>(async () => imageResponse(Buffer.from(tinyPng()).toString('base64')));
-    const result = await new GeminiImageProvider(env, { fetchImpl: fetchMock }).generate(makeInput());
+    const input = makeInput();
+    input.mask = tinyPng();
+    const result = await new GeminiImageProvider(env, { fetchImpl: fetchMock }).generate(input);
     const [url, init] = fetchMock.mock.calls[0];
     const body = JSON.parse(String(init?.body)) as {
       contents: Array<{ parts: Array<{ text?: string; inlineData?: { mimeType?: string; data?: string } }> }>;
@@ -76,7 +78,8 @@ describe('Gemini image provider', () => {
 
     expect(url).toBe(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_DEFAULT_MODEL}:generateContent`);
     expect(new Headers(init?.headers).get('x-goog-api-key')).toBe(apiKey);
-    expect(body.contents[0].parts[0].text).toBe(makeInput().prompt);
+    expect(body.contents[0].parts).toHaveLength(2);
+    expect(body.contents[0].parts[0].text).toBe(input.prompt);
     expect(body.contents[0].parts[1].inlineData?.mimeType).toBe('image/jpeg');
     expect(body.contents[0].parts[1].inlineData?.data).toBe(Buffer.from(jpegFixture()).toString('base64'));
     expect(body.generationConfig?.responseModalities).toEqual(['IMAGE']);
@@ -148,7 +151,13 @@ describe('Gemini image provider', () => {
       const result = await new GeminiImageProvider(env, { fetchImpl: fetchMock }).generate(makeInput());
 
       expect(result.status).toBe('ERROR');
-      if (result.status !== 'GENERATED') expect(result.errorCode).toBe(expected);
+      if (result.status !== 'GENERATED') {
+        expect(result.errorCode).toBe(expected);
+        if (status === 400) {
+          expect(result.providerHttpStatus).toBe(400);
+          expect(result.providerErrorMessage).toBe('invalid argument');
+        }
+      }
     }
   });
 
@@ -196,5 +205,9 @@ describe('Gemini image provider', () => {
     const result = await new GeminiImageProvider(env, { fetchImpl: fetchMock }).generate(makeInput());
 
     expect(JSON.stringify(result)).not.toContain(apiKey);
+    if (result.status !== 'GENERATED') {
+      expect(result.providerHttpStatus).toBe(401);
+      expect(result.providerErrorMessage).toBe('The key [redacted] is invalid');
+    }
   });
 });

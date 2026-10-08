@@ -72,6 +72,16 @@ export function ResultPage() {
   const resultMessage = concept?.status === 'ERROR'
     ? t(aiErrorMessageKey(concept.errorCode))
     : t(unavailableBodyKey);
+  const providerFailureDetails = concept?.status === 'ERROR'
+    ? (concept.providerFailures?.length
+      ? concept.providerFailures
+        .filter((failure) => failure.providerErrorMessage || failure.providerHttpStatus)
+        .map((failure) => `${failure.providerId}${failure.providerHttpStatus ? ` · HTTP ${failure.providerHttpStatus}` : ''}${failure.providerErrorMessage ? `: ${failure.providerErrorMessage}` : ''}`)
+        .join(' · ')
+      : concept.providerErrorMessage
+        ? `${concept.providerId}${concept.providerHttpStatus ? ` · HTTP ${concept.providerHttpStatus}` : ''}: ${concept.providerErrorMessage}`
+        : '')
+    : '';
   const materialsLabel = config.materials.length === 0
     ? t('result.materialsNone')
     : config.materials.map((material) => t(`material.${material}`)).join(' · ');
@@ -130,6 +140,7 @@ export function ResultPage() {
             <div>
               <strong>{concept?.status === 'ERROR' ? t('ai.failedBadge') : t('result.unavailableTitle')}</strong>
               <p>{resultMessage}</p>
+              {providerFailureDetails && <p className="result-provider-error">{providerFailureDetails}</p>}
               {concept?.status === 'ERROR' && <p className="result-retry-hint">{t('result.retryHint')}</p>}
             </div>
           </div>

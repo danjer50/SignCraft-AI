@@ -83,8 +83,8 @@ export async function postJson(
 }
 
 /**
- * Map an HTTP failure onto SignCraft's existing public error vocabulary. Provider payload text is
- * never echoed back to the browser; it is only used here to tell a quota problem from a bad request.
+ * Map an HTTP failure onto SignCraft's existing public error vocabulary. Raw provider payload text
+ * is used here only for classification; public diagnostics are separately extracted and redacted.
  */
 export function mapHttpStatusToErrorCode(status: number, providerMessage = ''): AIErrorCode {
   if (/quota|credit|billing|insufficient|payment required|exceeded your current/i.test(providerMessage)) {
@@ -100,7 +100,7 @@ export function mapHttpStatusToErrorCode(status: number, providerMessage = ''): 
   return 'AI_REQUEST_REJECTED';
 }
 
-/** Extract a short, non-secret provider error string for internal classification only. */
+/** Extract a short provider error string; sanitize it before logging or returning it to the browser. */
 export function readProviderMessage(body: unknown): string {
   if (typeof body !== 'object' || body === null) return '';
   const record = body as Record<string, unknown>;
@@ -112,6 +112,39 @@ export function readProviderMessage(body: unknown): string {
   }
   if (typeof record.message === 'string') return record.message.slice(0, 500);
   return '';
+}
+
+/**
+ * Keep only a short provider error message that is safe to show in the user's own error screen
+ * and Vercel function logs. Provider messages can include echoed credentials, so redact both
+ * common key formats and the exact secrets known to the adapter before returning any text.
+ */
+export function sanitizeProviderErrorMessage(
+  message: string,
+  secrets: readonly (string | undefined)[] = [],
+): string | undefined {
+  let safe = message;
+  for (const secret of secrets) {
+    const value = secret?.trim();
+    if (value && value.length >= 4) {
+      const escaped = value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      safe = safe.replace(new RegExp(escaped, 'g'), '[redacted]');
+    }
+  }
+  safe = safe
+    .replace(/\bBearer\s+[^\s,;]+/gi, 'Bearer [redacted]')
+    .replace(/\b(?:AIza[0-9A-Za-z_-]{20,}|sk-(?:or-v1-)?[A-Za-z0-9_-]{12,}|sk_[A-Za-z0-9_-]{12,})\b/gi, '[redacted]')
+    .replace(/\b((?:api[_\s-]?key|access[_\s-]?token|secret)\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;]+)/gi, '$1[redacted]')
+    .split('')
+    .map((character) => {
+      const code = character.charCodeAt(0);
+      return code < 0x20 || (code >= 0x7f && code <= 0x9f) ? ' ' : character;
+    })
+    .join('')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 500);
+  return safe || undefined;
 }
 
 /** Read an optional numeric environment setting, ignoring anything out of range. */

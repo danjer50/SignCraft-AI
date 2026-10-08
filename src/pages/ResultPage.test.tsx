@@ -72,6 +72,8 @@ describe('result page states', () => {
       providerId: 'cloudflare-flux-2-klein-9b',
       errorCode: 'AI_PROVIDER_UNAVAILABLE',
       message: 'Cloudflare Workers AI is temporarily unavailable. Please retry.',
+      providerHttpStatus: 400,
+      providerErrorMessage: 'Input validation failed for field mask',
       createdAt: '2026-10-05T09:00:00.000Z',
       sourceImageTransfer: 'SENT_TO_SERVER',
     });
@@ -79,6 +81,7 @@ describe('result page states', () => {
 
     expect(screen.getAllByText('Génération non confirmée').length).toBeGreaterThan(0);
     expect(screen.getByText(/temporairement indisponible/i)).toBeInTheDocument();
+    expect(screen.getByText(/cloudflare-flux-2-klein-9b · HTTP 400: Input validation failed for field mask/i)).toBeInTheDocument();
     expect(screen.getByText(/Une erreur n’efface pas votre brief/i)).toBeInTheDocument();
 
     // The restored photo is a preview only, so the retry stays honestly disabled.

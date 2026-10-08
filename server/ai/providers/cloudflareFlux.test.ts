@@ -59,7 +59,9 @@ describe('Cloudflare FLUX.2 Klein 9B provider', () => {
       result: { image: Buffer.from(generatedJpeg).toString('base64') },
     }), { status: 200, headers: { 'content-type': 'application/json' } }));
     const provider = new CloudflareFluxProvider(env, fetchMock);
-    const result = await provider.generate(makeInput());
+    const input = makeInput();
+    input.mask = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+    const result = await provider.generate(input);
     const [url, init] = fetchMock.mock.calls[0];
     const form = init?.body as FormData;
     const inputImage = form.get('input_image_0') as File;
@@ -76,6 +78,8 @@ describe('Cloudflare FLUX.2 Klein 9B provider', () => {
     expect(form.get('prompt')).toBe(makeInput().prompt);
     expect(form.get('width')).toBe('1024');
     expect(form.get('height')).toBe('575');
+    // This model's pre-mask REST contract does not define a `mask` field; brush placement stays in the prompt.
+    expect(form.has('mask')).toBe(false);
     expect(inputImage.name).toBe('storefront.jpg');
     expect(inputImage.type).toBe('image/jpeg');
     expect(new Uint8Array(await inputImage.arrayBuffer())).toEqual(makeInput().image.bytes);
@@ -121,7 +125,11 @@ describe('Cloudflare FLUX.2 Klein 9B provider', () => {
     const creditsFetch = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ success: false, errors: [{ message: 'Insufficient credits for this request' }] }), { status: 400 }));
     const credits = await new CloudflareFluxProvider(env, creditsFetch).generate(makeInput());
     expect(credits.status).toBe('ERROR');
-    if (credits.status !== 'GENERATED') expect(credits.errorCode).toBe('AI_CREDITS_EXHAUSTED');
+    if (credits.status !== 'GENERATED') {
+      expect(credits.errorCode).toBe('AI_CREDITS_EXHAUSTED');
+      expect(credits.providerHttpStatus).toBe(400);
+      expect(credits.providerErrorMessage).toBe('Insufficient credits for this request');
+    }
 
     const authFetch = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ success: false, errors: [{ message: 'Not authorized' }] }), { status: 403 }));
     const auth = await new CloudflareFluxProvider(env, authFetch).generate(makeInput());

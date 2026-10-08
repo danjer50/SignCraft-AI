@@ -2,8 +2,9 @@ import type { SignArea, SignAreaBounds } from '../../domain/sign';
 
 /**
  * Mask generation constants and utilities.
- * Creates a binary mask (black/white or transparent/white) from user brush strokes
- * to provide actual spatial constraints to AI providers that support inpainting.
+ * Creates a binary PNG from user brush strokes for a future provider-specific native inpainting
+ * adapter. Current providers do not consume this generic mask; callers must match the documented
+ * provider dimensions and polarity before adding it to an upstream request.
  */
 
 const MASK_CANVAS_SIZE = 512;
@@ -72,8 +73,8 @@ function createMaskCanvas(signArea: SignArea, size: number = MASK_CANVAS_SIZE): 
 }
 
 /**
- * Generate a binary mask blob from the user's brush strokes.
- * Returns a PNG blob that can be sent to AI providers supporting inpainting.
+ * Generate a generic 512×512 binary mask blob from the user's brush strokes.
+ * This is not currently uploaded; provider adapters require provider-specific formats and source-matched dimensions.
  */
 export async function generateMaskFromSignArea(signArea: SignArea | null): Promise<Blob | null> {
   if (!signArea || signArea.strokes.length === 0) {

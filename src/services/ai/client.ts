@@ -1,4 +1,4 @@
-import type { AIConceptResult, AIErrorCode, SignConfiguration } from '../../domain/sign';
+import type { AIConceptResult, AIErrorCode, AIProviderFailureDiagnostic, SignConfiguration } from '../../domain/sign';
 import { AI_ERROR_CODES, normalizeMaterials } from '../../domain/sign';
 import { clientConfig } from '../config';
 import { DemoAIProvider } from './demoProvider';
@@ -6,7 +6,6 @@ import type { ImageEditingRequest } from './contracts';
 import { buildStorefrontEditPrompt, SIGNCRAFT_PROMPT_VERSION } from './promptBuilder';
 import { prepareCloudflareReferenceImage } from './imagePreparation';
 import { isOverEditedRender, isUnchangedRender } from './renderComparison';
-import { generateMaskFromSignArea, isMaskGenerationSupported } from './maskGenerator';
 
 function normalizedConfiguration(configuration: SignConfiguration): SignConfiguration {
   return {
@@ -17,11 +16,55 @@ function normalizedConfiguration(configuration: SignConfiguration): SignConfigur
   };
 }
 
+interface ProviderDiagnostics {
+  providerHttpStatus?: number;
+  providerErrorMessage?: string;
+  providerFailures?: AIProviderFailureDiagnostic[];
+}
+
+function parseProviderDiagnostics(body: Record<string, unknown>): ProviderDiagnostics {
+  const diagnostics: ProviderDiagnostics = {};
+  if (typeof body.providerHttpStatus === 'number'
+    && Number.isInteger(body.providerHttpStatus)
+    && body.providerHttpStatus >= 100
+    && body.providerHttpStatus <= 599) {
+    diagnostics.providerHttpStatus = body.providerHttpStatus;
+  }
+  if (typeof body.providerErrorMessage === 'string') {
+    const message = body.providerErrorMessage.trim().slice(0, 500);
+    if (message) diagnostics.providerErrorMessage = message;
+  }
+  if (Array.isArray(body.providerFailures)) {
+    const failures: AIProviderFailureDiagnostic[] = [];
+    for (const value of body.providerFailures.slice(0, 5)) {
+      if (!value || typeof value !== 'object') continue;
+      const entry = value as Record<string, unknown>;
+      const errorCode = AI_ERROR_CODES.find((code) => code === entry.errorCode);
+      if (typeof entry.providerId !== 'string' || entry.providerId.length > 80 || !errorCode) continue;
+      const failure: AIProviderFailureDiagnostic = { providerId: entry.providerId, errorCode };
+      if (typeof entry.providerHttpStatus === 'number'
+        && Number.isInteger(entry.providerHttpStatus)
+        && entry.providerHttpStatus >= 100
+        && entry.providerHttpStatus <= 599) {
+        failure.providerHttpStatus = entry.providerHttpStatus;
+      }
+      if (typeof entry.providerErrorMessage === 'string') {
+        const message = entry.providerErrorMessage.trim().slice(0, 500);
+        if (message) failure.providerErrorMessage = message;
+      }
+      failures.push(failure);
+    }
+    if (failures.length > 0) diagnostics.providerFailures = failures;
+  }
+  return diagnostics;
+}
+
 function errorResult(
   errorCode: AIErrorCode,
   sourceImageTransfer: 'LOCAL_ONLY' | 'SENT_TO_SERVER' | 'UNKNOWN',
   message: string,
   providerId = 'signcraft-ai-api',
+  diagnostics: ProviderDiagnostics = {},
 ): AIConceptResult {
   return {
     status: 'ERROR',
@@ -30,6 +73,7 @@ function errorResult(
     message,
     createdAt: new Date().toISOString(),
     sourceImageTransfer,
+    ...diagnostics,
   };
 }
 
@@ -39,46 +83,16 @@ function errorResult(
  */
 export const AI_REQUEST_TIMEOUT_MS = 120_000;
 
-/**
- * Generate a mask from the user's brush strokes if available and supported.
- * Returns a promise that resolves to the mask blob or null if not available.
- */
-async function generateMaskForRequest(configuration: SignConfiguration): Promise<Blob | null> {
-  // Only generate mask if brush data exists and the environment supports it
-  if (!configuration.signArea || !isMaskGenerationSupported()) {
-    return null;
-  }
-
-  try {
-    const mask = await generateMaskFromSignArea(configuration.signArea);
-    return mask;
-  } catch (error) {
-    console.error('Failed to generate mask for AI request:', error);
-    // Continue without mask - the textual placement description will still be used
-    return null;
-  }
-}
-
 export async function generateStorefrontConcept(
   request: Omit<ImageEditingRequest, 'prompt' | 'preserveSourceArchitecture' | 'exactTextOverlayRequired'>,
 ): Promise<AIConceptResult> {
   const configuration = normalizedConfiguration(request.configuration);
-  
-  // Generate mask from brush data if available
-  let mask: Blob | null = null;
-  try {
-    mask = await generateMaskForRequest(configuration);
-  } catch {
-    // Non-fatal: continue without mask
-  }
-
   const fullRequest: ImageEditingRequest = {
     ...request,
     configuration,
     prompt: buildStorefrontEditPrompt(configuration),
     preserveSourceArchitecture: true,
     exactTextOverlayRequired: true,
-    mask: mask || undefined,
   };
 
   if (clientConfig.aiMode === 'demo') return new DemoAIProvider().generate(fullRequest);
@@ -102,7 +116,6 @@ export async function generateStorefrontConcept(
     payload.append('storefrontImage', preparedImage, 'storefront.jpg');
     payload.append('configuration', JSON.stringify(fullRequest.configuration));
     payload.append('promptVersion', SIGNCRAFT_PROMPT_VERSION);
-    if (fullRequest.mask) payload.append('mask', fullRequest.mask, 'sign-mask.png');
 
     requestStarted = true;
     const response = await fetch('/api/ai/generate-sign', { method: 'POST', body: payload, signal: controller.signal });
@@ -113,6 +126,9 @@ export async function generateStorefrontConcept(
       promptVersion?: string;
       message?: string;
       code?: string;
+      providerHttpStatus?: number;
+      providerErrorMessage?: string;
+      providerFailures?: unknown;
     };
     const imageUrlIsSafe = typeof body.imageUrl === 'string' &&
       body.imageUrl.length <= 17 * 1024 * 1024 &&
@@ -149,6 +165,7 @@ export async function generateStorefrontConcept(
       'SENT_TO_SERVER',
       typeof body.message === 'string' ? body.message : 'The secure server did not confirm successful AI processing.',
       typeof body.providerId === 'string' ? body.providerId : 'server-ai-api',
+      parseProviderDiagnostics(body),
     );
   } catch (error) {
     const aborted = controller.signal.aborted || (error instanceof DOMException && error.name === 'AbortError');

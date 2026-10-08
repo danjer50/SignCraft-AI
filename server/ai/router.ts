@@ -1,4 +1,4 @@
-import type { AIErrorCode } from '../../src/domain/sign.js';
+import type { AIErrorCode, AIProviderFailureDiagnostic } from '../../src/domain/sign.js';
 import { DemoAIProvider } from './DemoAIProvider.js';
 import {
   DEFAULT_PROVIDER_TIMEOUT_MS,
@@ -50,9 +50,19 @@ interface AttemptFailure {
   readonly providerId: string;
   readonly errorCode: AIErrorCode;
   readonly message: string;
+  readonly providerHttpStatus?: number;
+  readonly providerErrorMessage?: string;
 }
 
-type AttemptOutcome<T> = { ok: true; value: T } | { ok: false; errorCode: AIErrorCode; message: string };
+type AttemptOutcome<T> =
+  | { ok: true; value: T }
+  | {
+      ok: false;
+      errorCode: AIErrorCode;
+      message: string;
+      providerHttpStatus?: number;
+      providerErrorMessage?: string;
+    };
 
 /**
  * Server logs only ever carry the provider id, its model and a failure category. Prompts, photos,
@@ -193,7 +203,20 @@ function pickFinalErrorCode(failures: readonly AttemptFailure[], fallback: AIErr
 }
 
 function summarizeFailures(failures: readonly AttemptFailure[]): string {
-  return failures.map((failure) => `${failure.providerId}: ${failureCategory(failure.errorCode)}`).join('; ');
+  return failures.map((failure) => {
+    const status = failure.providerHttpStatus ? ` HTTP ${failure.providerHttpStatus}` : '';
+    const detail = failure.providerErrorMessage ? ` — ${failure.providerErrorMessage}` : '';
+    return `${failure.providerId}: ${failureCategory(failure.errorCode)}${status}${detail}`;
+  }).join('; ');
+}
+
+function publicFailureDetails(failures: readonly AttemptFailure[]): AIProviderFailureDiagnostic[] {
+  return failures.map((failure) => ({
+    providerId: failure.providerId,
+    errorCode: failure.errorCode,
+    ...(failure.providerHttpStatus ? { providerHttpStatus: failure.providerHttpStatus } : {}),
+    ...(failure.providerErrorMessage ? { providerErrorMessage: failure.providerErrorMessage } : {}),
+  }));
 }
 
 /**
@@ -244,8 +267,16 @@ async function runChain<T>(
       log(`${step.entry.id} succeeded`);
       return { value: outcome.value, failures };
     }
-    failures.push({ providerId: step.entry.id, errorCode: outcome.errorCode, message: outcome.message });
-    log(`${step.entry.id} failed (${outcome.errorCode})`);
+    failures.push({
+      providerId: step.entry.id,
+      errorCode: outcome.errorCode,
+      message: outcome.message,
+      ...(outcome.providerHttpStatus ? { providerHttpStatus: outcome.providerHttpStatus } : {}),
+      ...(outcome.providerErrorMessage ? { providerErrorMessage: outcome.providerErrorMessage } : {}),
+    });
+    const httpStatus = outcome.providerHttpStatus ? `, HTTP ${outcome.providerHttpStatus}` : '';
+    const safeDetail = outcome.providerErrorMessage ? `: ${outcome.providerErrorMessage}` : '';
+    log(`${step.entry.id} failed (${outcome.errorCode}${httpStatus})${safeDetail}`);
     const next = chain.attempts[index + 1];
     if (next) log(`falling back to ${next.entry.id}`);
   }
@@ -300,14 +331,27 @@ export async function runImageEditTask(
     const result = await provider.generate(input);
     return result.status === 'GENERATED'
       ? { ok: true, value: result }
-      : { ok: false, errorCode: result.errorCode, message: result.message };
+      : {
+          ok: false,
+          errorCode: result.errorCode,
+          message: result.message,
+          ...(result.providerHttpStatus ? { providerHttpStatus: result.providerHttpStatus } : {}),
+          ...(result.providerErrorMessage ? { providerErrorMessage: result.providerErrorMessage } : {}),
+        };
   });
 
   if (value) return value;
   if (failures.length === 0) return nothingAttemptedResult(chain, environment, input);
   if (failures.length === 1) {
-    // A single failed provider keeps its own message, exactly as before the router existed.
-    return { status: 'ERROR', providerId: failures[0].providerId, errorCode: failures[0].errorCode, message: failures[0].message };
+    // A single failed provider keeps its own message and upstream diagnostics.
+    return {
+      status: 'ERROR',
+      providerId: failures[0].providerId,
+      errorCode: failures[0].errorCode,
+      message: failures[0].message,
+      ...(failures[0].providerHttpStatus ? { providerHttpStatus: failures[0].providerHttpStatus } : {}),
+      ...(failures[0].providerErrorMessage ? { providerErrorMessage: failures[0].providerErrorMessage } : {}),
+    };
   }
   const errorCode = pickFinalErrorCode(failures, 'AI_PROVIDER_UNAVAILABLE');
   log(`all providers failed: ${summarizeFailures(failures)}`);
@@ -316,6 +360,7 @@ export async function runImageEditTask(
     providerId: 'ai-router',
     errorCode,
     message: `No configured AI provider could complete this request. ${summarizeFailures(failures)}. The source storefront has not been edited.`,
+    providerFailures: publicFailureDetails(failures),
   };
 }
 
